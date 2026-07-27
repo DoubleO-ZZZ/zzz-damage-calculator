@@ -6,7 +6,7 @@
   "description": "Zenless Zone Zero damage calculator based on the source spreadsheet formulas.",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/calculators.js && node --check src/app.js"
+    "check": "node --check src/calculators.js && node --check src/data/catalog.js && node --check src/comparison-engine.js && node --check src/comparison.js && node --check src/app.js"
   },
   "engines": {
     "node": ">=20"

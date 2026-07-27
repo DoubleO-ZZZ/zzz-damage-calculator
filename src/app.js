@@ -24,6 +24,7 @@ import {
   getAdditionalMultiplier,
   getAliceAdditionalCoefficient,
 } from "./calculators.js";
+import { initComparison } from "./comparison.js";
 
 const STORAGE_KEY = "new-eridu-combat-lab:v1";
 const ELEMENTS = Object.keys(NORMAL_ANOMALY_COEFFICIENTS);
@@ -43,9 +44,10 @@ const clone = (value) =>
     : JSON.parse(JSON.stringify(value));
 
 const DEFAULT_STATE = {
-  version: 1,
+  version: 2,
   ui: {
-    activeTab: "strong",
+    activeTab: "compare",
+    activeDetailTab: "strong",
   },
   strong: clone(STRONG_ATTACK_DEFAULTS),
   mingpo: clone(MINGPO_DEFAULTS),
@@ -128,7 +130,15 @@ function mergeState(defaultValue, savedValue) {
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
-    return mergeState(DEFAULT_STATE, saved);
+    const merged = mergeState(DEFAULT_STATE, saved);
+    if ((saved?.version ?? 1) < 2) {
+      if (["strong", "mingpo", "anomaly"].includes(saved?.ui?.activeTab)) {
+        merged.ui.activeDetailTab = saved.ui.activeTab;
+      }
+      merged.version = 2;
+      merged.ui.activeTab = "compare";
+    }
+    return merged;
   } catch {
     return clone(DEFAULT_STATE);
   }
@@ -164,8 +174,11 @@ function isChoice(value, choices) {
 }
 
 function normalizeStateChoices() {
-  if (!["strong", "mingpo", "anomaly"].includes(state.ui.activeTab)) {
-    state.ui.activeTab = "strong";
+  if (!["compare", "details"].includes(state.ui.activeTab)) {
+    state.ui.activeTab = "compare";
+  }
+  if (!["strong", "mingpo", "anomaly"].includes(state.ui.activeDetailTab)) {
+    state.ui.activeDetailTab = "strong";
   }
 
   state.anomaly.dealers.A.id = "A";
@@ -1705,6 +1718,50 @@ function bindTabs() {
   activateTab(state.ui.activeTab);
 }
 
+function activateDetailTab(name, moveFocus = false) {
+  const tabs = [...document.querySelectorAll("[data-detail-tab]")];
+  const panels = [...document.querySelectorAll("[data-detail-panel]")];
+  const targetTab = tabs.find((tab) => tab.dataset.detailTab === name);
+  if (!targetTab) return;
+
+  tabs.forEach((tab) => {
+    const active = tab === targetTab;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+  });
+  panels.forEach((panel) => {
+    const active = panel.dataset.detailPanel === name;
+    panel.classList.toggle("is-active", active);
+    panel.hidden = !active;
+  });
+  state.ui.activeDetailTab = name;
+  persistState();
+  if (moveFocus) targetTab.focus();
+}
+
+function bindDetailTabs() {
+  const tabs = [...document.querySelectorAll("[data-detail-tab]")];
+  tabs.forEach((tab, index) => {
+    tab.addEventListener("click", () =>
+      activateDetailTab(tab.dataset.detailTab),
+    );
+    tab.addEventListener("keydown", (event) => {
+      let nextIndex;
+      if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+      if (event.key === "ArrowLeft") {
+        nextIndex = (index - 1 + tabs.length) % tabs.length;
+      }
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = tabs.length - 1;
+      if (nextIndex === undefined) return;
+      event.preventDefault();
+      activateDetailTab(tabs[nextIndex].dataset.detailTab, true);
+    });
+  });
+  activateDetailTab(state.ui.activeDetailTab);
+}
+
 function resetCalculator(name) {
   if (name === "strong") {
     clearInvalidInputsFor("strong");
@@ -1798,8 +1855,10 @@ function bindAnomalyNavigation() {
 }
 
 renderAll();
+initComparison();
 bindFormEvents();
 bindTabs();
+bindDetailTabs();
 bindResetButtons();
 bindAnomalyNavigation();
 persistState();

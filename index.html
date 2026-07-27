@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="젠레스 존 제로 강공·명파·이상 데미지를 원본 스프레드시트 수식으로 계산하는 비공식 팬 도구"
+      content="젠레스 존 제로 캐릭터·W-엔진 투자안을 비교하고 강공·명파·이상 데미지를 상세 계산하는 비공식 팬 도구"
     />
     <meta name="theme-color" content="#0b0d10" />
-    <title>뉴에리두 전투 계산기</title>
+    <title>뉴에리두 투자 비교 · 전투 계산기</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -25,9 +25,9 @@
           </div>
           <div>
             <p class="eyebrow">INTER-KNOT // COMBAT LAB</p>
-            <h1>뉴에리두 전투 계산기</h1>
+            <h1>뉴에리두 투자 비교 · 전투 계산기</h1>
             <p class="header-copy">
-              복잡한 전투식을 한 화면에서. 값을 바꾸면 결과가 즉시 갱신됩니다.
+              돌파와 W-엔진 두 선택지를 나란히 비교하고, 필요할 때 상세 수식까지 확인하세요.
             </p>
           </div>
         </div>
@@ -50,53 +50,37 @@
       </div>
     </header>
 
-    <nav class="calculator-nav" aria-label="계산기 선택">
-      <div class="nav-inner" role="tablist" aria-label="데미지 계산기">
+    <nav class="calculator-nav" aria-label="도구 선택">
+      <div class="nav-inner nav-inner--primary" role="tablist" aria-label="도구 선택">
         <button
           class="nav-tab is-active"
-          id="tab-strong"
+          id="tab-compare"
           type="button"
           role="tab"
           aria-selected="true"
-          aria-controls="panel-strong"
-          data-calculator-tab="strong"
+          aria-controls="panel-compare"
+          data-calculator-tab="compare"
         >
           <span class="tab-index">01</span>
           <span>
-            <strong>강공</strong>
-            <small>일반 공격 기반</small>
+            <strong>투자 비교</strong>
+            <small>돌파 · W-엔진 · 세팅 A/B</small>
           </span>
         </button>
         <button
           class="nav-tab"
-          id="tab-mingpo"
+          id="tab-details"
           type="button"
           role="tab"
           aria-selected="false"
-          aria-controls="panel-mingpo"
-          data-calculator-tab="mingpo"
+          aria-controls="panel-details"
+          data-calculator-tab="details"
           tabindex="-1"
         >
           <span class="tab-index">02</span>
           <span>
-            <strong>명파</strong>
-            <small>관입력 기반</small>
-          </span>
-        </button>
-        <button
-          class="nav-tab"
-          id="tab-anomaly"
-          type="button"
-          role="tab"
-          aria-selected="false"
-          aria-controls="panel-anomaly"
-          data-calculator-tab="anomaly"
-          tabindex="-1"
-        >
-          <span class="tab-index">03</span>
-          <span>
-            <strong>이상</strong>
-            <small>이상·혼돈·난개</small>
+            <strong>상세 계산기</strong>
+            <small>강공 · 명파 · 이상 수식</small>
           </span>
         </button>
       </div>
@@ -104,11 +88,81 @@
 
     <main id="calculator-content">
       <section
-        class="calculator-panel is-active"
+        class="top-level-panel is-active"
+        id="panel-compare"
+        role="tabpanel"
+        aria-labelledby="tab-compare"
+        data-calculator-panel="compare"
+      >
+        <div class="panel-heading comparison-hero">
+          <div>
+            <p class="section-kicker">INVESTMENT SIMULATOR</p>
+            <h2>어느 쪽에 투자할지 숫자로 비교</h2>
+            <p>
+              같은 캐릭터의 돌파·W-엔진 선택지를 동일한 전투 조건에서 나란히 계산합니다.
+            </p>
+          </div>
+          <button class="ghost-button" type="button" data-reset="compare">
+            비교 기본값 복원
+          </button>
+        </div>
+        <div id="compare-app"></div>
+      </section>
+
+      <section
+        class="top-level-panel top-level-panel--details"
+        id="panel-details"
+        role="tabpanel"
+        aria-labelledby="tab-details"
+        data-calculator-panel="details"
+        hidden
+      >
+        <div class="details-heading">
+          <div>
+            <p class="section-kicker">FORMULA WORKBENCH</p>
+            <h2>상세 계산기</h2>
+            <p>기존 강공·명파·이상 계산기를 세부 수치 검증용으로 그대로 제공합니다.</p>
+          </div>
+          <nav class="detail-nav" role="tablist" aria-label="상세 계산기 선택">
+            <button
+              class="detail-tab is-active"
+              id="detail-tab-strong"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="panel-strong"
+              data-detail-tab="strong"
+            >강공</button>
+            <button
+              class="detail-tab"
+              id="detail-tab-mingpo"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-mingpo"
+              data-detail-tab="mingpo"
+              tabindex="-1"
+            >명파</button>
+            <button
+              class="detail-tab"
+              id="detail-tab-anomaly"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="panel-anomaly"
+              data-detail-tab="anomaly"
+              tabindex="-1"
+            >이상</button>
+          </nav>
+        </div>
+
+        <div class="detail-panels">
+      <section
+        class="calculator-panel detail-calculator-panel is-active"
         id="panel-strong"
         role="tabpanel"
-        aria-labelledby="tab-strong"
-        data-calculator-panel="strong"
+        aria-labelledby="detail-tab-strong"
+        data-detail-panel="strong"
       >
         <div class="panel-heading">
           <div>
@@ -135,11 +189,11 @@
       </section>
 
       <section
-        class="calculator-panel"
+        class="calculator-panel detail-calculator-panel"
         id="panel-mingpo"
         role="tabpanel"
-        aria-labelledby="tab-mingpo"
-        data-calculator-panel="mingpo"
+        aria-labelledby="detail-tab-mingpo"
+        data-detail-panel="mingpo"
         hidden
       >
         <div class="panel-heading">
@@ -167,11 +221,11 @@
       </section>
 
       <section
-        class="calculator-panel calculator-panel--anomaly"
+        class="calculator-panel calculator-panel--anomaly detail-calculator-panel"
         id="panel-anomaly"
         role="tabpanel"
-        aria-labelledby="tab-anomaly"
-        data-calculator-panel="anomaly"
+        aria-labelledby="detail-tab-anomaly"
+        data-detail-panel="anomaly"
         hidden
       >
         <div class="panel-heading">
@@ -264,6 +318,8 @@
             <div id="radiance-calculator"></div>
           </section>
         </form>
+      </section>
+        </div>
       </section>
     </main>
 
