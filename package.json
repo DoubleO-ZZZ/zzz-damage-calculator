@@ -6,8 +6,9 @@
   "description": "Zenless Zone Zero damage calculator based on the source spreadsheet formulas.",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/calculators.js && node --check src/data/catalog.js && node --check src/data/discs.js && node --check src/data/media.js && node --check src/data/mindscapes.js && node --check src/data/weapon-passives.js && node --check src/disk-build.js && node --check src/comparison-engine.js && node --check src/comparison.js && node --check src/app.js",
-    "update:nanoka-assets": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-nanoka-assets.ps1"
+    "check": "node --check src/calculators.js && node --check src/data/catalog.js && node --check src/data/discs.js && node --check src/data/media.js && node --check src/data/mindscapes.js && node --check src/data/agent-effects.js && node --check src/data/enemies.js && node --check src/data/weapon-passives.js && node --check src/data/party-weapon-effects.js && node --check src/disk-build.js && node --check src/party-engine.js && node --check src/comparison-engine.js && node --check src/comparison.js && node --check src/app.js",
+    "update:nanoka-assets": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-nanoka-assets.ps1",
+    "update:nanoka-enemies": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/update-nanoka-enemy-assets.ps1"
   },
   "engines": {
     "node": ">=20"

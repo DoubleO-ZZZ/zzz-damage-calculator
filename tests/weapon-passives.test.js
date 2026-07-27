@@ -78,7 +78,7 @@ test("independent Deep Sea Visitor crit buffs can coexist at maximum", () => {
   assert.equal(result.totals.critRate, 40);
 });
 
-test("extra-hit and DEF-ignore mechanics stay unsupported instead of being misclassified", () => {
+test("extra-hit stays separate while DEF ignore uses its own multiplier field", () => {
   const cannon = resolveWeaponPassiveEffects("14001", 5, strongContext);
   assert.equal(cannon.totals.attackPercent, 12);
   assert.equal(cannon.unsupported.length, 1);
@@ -87,7 +87,15 @@ test("extra-hit and DEF-ignore mechanics stay unsupported instead of being miscl
   const eclipse = resolveWeaponPassiveEffects("14129", 5, strongContext);
   assert.equal(eclipse.totals.critDamage, 72);
   assert.equal(eclipse.totals.defenseReduction, 0);
-  assert.equal(eclipse.unsupported[0].label, "방어력 무시");
+  assert.equal(eclipse.totals.defenseIgnore, 40);
+  assert.equal(eclipse.unsupported.length, 0);
+
+  const flamethrower = resolveWeaponPassiveEffects(
+    "14130",
+    5,
+    strongContext,
+  );
+  assert.equal(flamethrower.totals.defenseIgnore, 48);
 });
 
 test("flat Anomaly Mastery is not converted into a percentage", () => {

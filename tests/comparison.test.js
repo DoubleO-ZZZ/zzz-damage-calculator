@@ -65,9 +65,144 @@ test("W-Engine base and secondary stats affect the comparison", () => {
 test("the default comparison has a stable verified result", () => {
   const result = compareInvestments(createDefaultComparisonState());
 
-  assert.equal(result.A.displayedDamage, 43358);
-  assert.equal(result.B.displayedDamage, 37323);
-  assert.ok(Math.abs(result.deltaPercent - -13.919343006195021) < 1e-12);
+  assert.equal(result.common.stunned, true);
+  assert.equal(result.A.displayedDamage, 455768);
+  assert.equal(result.B.displayedDamage, 406830);
+  assert.ok(Math.abs(result.deltaPercent - -10.737489793537861) < 1e-12);
+});
+
+test("dealer and support copies of the same party disc buff do not stack", () => {
+  const state = createDefaultComparisonState();
+  for (const profile of Object.values(state.profiles)) {
+    profile.discBuildMode = "manual";
+    profile.discFourPieceId = "31600";
+    profile.discTwoPieceId = "31000";
+    profile.discEffectMode = "max";
+  }
+  state.common.party.member2.discFourPieceId = "31600";
+  state.common.party.member3.discFourPieceId = "31000";
+
+  const sameSet = compareInvestments(state);
+  const sameSetDamage =
+    sameSet.A.effectiveProfile.passiveDamageBonusPercent +
+    sameSet.common.partyDamageBonusPercent;
+
+  state.common.party.member2.discFourPieceId = "31900";
+  const differentSet = compareInvestments(state);
+  const differentSetDamage =
+    differentSet.A.effectiveProfile.passiveDamageBonusPercent +
+    differentSet.common.partyDamageBonusPercent;
+
+  assert.equal(differentSetDamage - sameSetDamage, 15);
+});
+
+test("Belina signature applies its self and party AP exactly once", () => {
+  const state = createDefaultComparisonState();
+  state.common.characterId = "1561";
+  state.common.mode = "anomaly";
+  state.common.anomalyKey = "풍화";
+  for (const profile of Object.values(state.profiles)) {
+    profile.characterId = "1561";
+    profile.weaponId = "14156";
+    profile.weaponRefinement = 1;
+    profile.discBuildMode = "manual";
+    profile.discAnomalyProficiency = 0;
+  }
+
+  const result = compareInvestments(state);
+  assert.equal(
+    result.A.effectiveProfile.passiveAnomalyProficiency,
+    130,
+  );
+  assert.deepEqual(
+    result.A.weaponPassive.applied
+      .filter((row) => row.stat === "anomalyProficiency")
+      .map((row) => row.amount),
+    [70, 60],
+  );
+});
+
+test("dealer disc Energy Regen reaches Cissia core DEF-ignore steps", () => {
+  const state = createDefaultComparisonState();
+  state.common.characterId = "1521";
+  state.common.mode = "strong";
+  for (const profile of Object.values(state.profiles)) {
+    profile.characterId = "1521";
+    profile.weaponId = "14152";
+    profile.weaponRefinement = 1;
+    profile.discBuildMode = "manual";
+    profile.discFourPieceId = "31900";
+    profile.discEffectMode = "max";
+  }
+  state.profiles.A.discTwoPieceId = "31000";
+  state.profiles.B.discTwoPieceId = "31600";
+
+  const result = compareInvestments(state);
+  const coreIgnore = (plan) =>
+    plan.agentEffects.applied.find(
+      (row) => row.stat === "defenseIgnore",
+    )?.amount;
+
+  assert.equal(coreIgnore(result.A), 15);
+  assert.equal(coreIgnore(result.B), 17);
+  assert.equal(
+    result.B.discBuild.setTotals.discEnergyRegenPercent,
+    20,
+  );
+});
+
+test("party HP buffs feed Mingpo HP-scaled core penetration", () => {
+  const state = createDefaultComparisonState();
+  state.common.characterId = "1371";
+  state.common.mode = "mingpo";
+  for (const profile of Object.values(state.profiles)) {
+    profile.characterId = "1371";
+    profile.weaponId = "14137";
+    profile.discBuildMode = "manual";
+    profile.discHpPercent = 60;
+  }
+
+  const baseline = compareInvestments(state);
+  state.common.hpPercentBuff = 10;
+  const buffed = compareInvestments(state);
+  const corePenetration = (result) =>
+    result.A.agentEffects.applied.find(
+      (row) => row.stat === "flatPenetration",
+    )?.amount;
+
+  assert.ok(corePenetration(buffed) > corePenetration(baseline));
+  assert.ok(
+    Math.abs(
+      corePenetration(buffed) -
+        buffed.A.calculation.combatHp * 0.1,
+    ) < 0.1,
+  );
+});
+
+test("combat Anomaly Mastery buffs do not inflate Promia's initial-stat core", () => {
+  const state = createDefaultComparisonState();
+  state.common.characterId = "1541";
+  state.common.mode = "anomaly";
+  for (const profile of Object.values(state.profiles)) {
+    profile.characterId = "1541";
+    profile.discBuildMode = "manual";
+    profile.discAnomalyMasteryPercent = 30;
+  }
+
+  const baseline = compareInvestments(state);
+  state.common.partyAnomalyMasteryFlat += 50;
+  const buffed = compareInvestments(state);
+  const coreAmount = (result) =>
+    result.A.agentEffects.applied.find((row) =>
+      row.key.endsWith(":anomaly-proficiency"),
+    )?.amount;
+
+  assert.equal(coreAmount(buffed), coreAmount(baseline));
+  assert.equal(
+    buffed.A.calculation.snapshot.combatAnomalyMastery -
+      baseline.A.calculation.snapshot.combatAnomalyMastery,
+    50,
+  );
 });
 
 test("W-Engine refinement changes its resolved passive and damage", () => {
@@ -98,6 +233,23 @@ test("W-Engine conditional effects can be disabled explicitly", () => {
   assert.equal(result.B.weaponPassive.totals.attackPercent, 0);
   assert.equal(result.B.weaponPassive.applied.length, 0);
   assert.equal(result.winner, "A");
+});
+
+test("W-Engine DEF ignore is distinct from DEF reduction", () => {
+  const state = createDefaultComparisonState();
+  state.common.characterId = "1291";
+  state.profiles.A.weaponId = "14129";
+  state.profiles.A.weaponRefinement = 5;
+  state.profiles.B = {
+    ...state.profiles.A,
+    weaponEffectMode: "off",
+  };
+  const result = compareInvestments(state);
+
+  assert.equal(result.A.weaponPassive.totals.defenseIgnore, 40);
+  assert.equal(result.A.effectiveProfile.passiveDefenseIgnorePercent, 40);
+  assert.equal(result.A.effectiveProfile.passiveDefenseReductionPercent, 0);
+  assert.ok(result.A.rawDamage > result.B.rawDamage);
 });
 
 test("selected Mindscape effects use maximum activation by default", () => {
@@ -150,6 +302,22 @@ test("always-on Mindscape stats apply without enabling conditional effects", () 
 
   assert.equal(result.B.mindscape.applied[0].stat, "attackPercent");
   assert.equal(result.B.mindscape.applied[0].amount, 15);
+  assert.ok(result.B.rawDamage > result.A.rawDamage);
+});
+
+test("Mindscape DEF ignore reaches the separate defense multiplier", () => {
+  const state = createDefaultComparisonState();
+  state.common.characterId = "1321";
+  state.profiles.B = {
+    ...state.profiles.A,
+    mindscape: 1,
+    mindscapeEffectMode: "max",
+  };
+  const result = compareInvestments(state);
+
+  assert.equal(result.B.mindscape.totals.defenseIgnore, 12);
+  assert.equal(result.B.effectiveProfile.passiveDefenseIgnorePercent, 12);
+  assert.equal(result.B.effectiveProfile.passiveDefenseReductionPercent, 0);
   assert.ok(result.B.rawDamage > result.A.rawDamage);
 });
 
@@ -373,6 +541,8 @@ test("an already capped attack build assigns every substat roll to CD and ATK", 
   assert.equal(build.rolls.critRatePercent, 0);
   assert.equal(build.rolls.critDamagePercent, 20);
   assert.equal(build.rolls.attackPercent, 20);
+  assert.equal(build.critMainStat, "critDamage");
+  assert.equal(build.totalCritRate, 100);
   assert.equal(build.critOverflowPercent, 0);
   assert.ok(build.fixedCritOverflowPercent > 0);
 });
@@ -403,8 +573,48 @@ test("W-Engine passive crit is included before safe disc allocation", () => {
   assert.equal(result.discBuild.critOverflowPercent, 0);
 });
 
+test("core and additional crit are included before safe disc allocation", () => {
+  const state = createDefaultComparisonState();
+  state.common.characterId = "1241";
+  state.common.party.member2 = {
+    characterId: "1311",
+    weaponId: "14131",
+    weaponRefinement: 1,
+    discFourPieceId: "32800",
+  };
+  state.common.party.member3.characterId = "1241";
+  for (const profile of Object.values(state.profiles)) {
+    Object.assign(profile, {
+      weaponId: "13004",
+      weaponEffectMode: "off",
+      discBuildMode: "attack",
+      discScore: 30,
+      discFourPieceId: "31000",
+      discTwoPieceId: "31600",
+      discEffectMode: "off",
+    });
+  }
+
+  const result = compareInvestments(state).A;
+
+  assert.equal(
+    result.agentEffects.applied.find(
+      (row) => row.stat === "critRate",
+    )?.amount,
+    30,
+  );
+  assert.deepEqual(result.discBuild.rolls, {
+    anomalyProficiency: 0,
+    attackPercent: 8,
+    critRatePercent: 13,
+    critDamagePercent: 9,
+  });
+  assert.ok(Math.abs(result.discBuild.totalCritRate - 98.2) < 1e-9);
+  assert.equal(result.discBuild.critOverflowPercent, 0);
+});
+
 test("final preset crit activates a 50% disc-set threshold", () => {
-  const character = CHARACTERS.find((item) => item.id === "1041");
+  const character = CHARACTERS.find((item) => item.id === "1251");
   const build = resolveDiscBuild({
     profile: {
       discBuildMode: "attack",
@@ -423,6 +633,164 @@ test("final preset crit activates a 50% disc-set threshold", () => {
   assert.equal(build.setTotals.passiveCritDamagePercent, 30);
 });
 
+test("disc 4-piece specialty scopes only activate for their required roles", () => {
+  const resolveEffect = ({
+    characterId,
+    setId,
+    effectId,
+    skillType = "normal",
+  }) => {
+    const character = CHARACTERS.find((item) => item.id === characterId);
+    const build = resolveDiscBuild({
+      profile: {
+        discBuildMode: "manual",
+        discFourPieceId: setId,
+        discTwoPieceId: "31500",
+        discEffectMode: "max",
+        discCritRatePercent: 50,
+      },
+      character,
+      mode: "strong",
+      skillType,
+    });
+    return build.effects.find(
+      (effect) => effect.key === `${setId}:4:${effectId}`,
+    );
+  };
+
+  for (const effectId of [
+    "stun-skill-party-crit-dmg",
+    "crit-threshold-party-crit-dmg",
+  ]) {
+    assert.equal(
+      resolveEffect({
+        characterId: "1251",
+        setId: "33200",
+        effectId,
+        skillType: "ex",
+      }).active,
+      true,
+    );
+    const wrongRole = resolveEffect({
+      characterId: "1041",
+      setId: "33200",
+      effectId,
+      skillType: "ex",
+    });
+    assert.equal(wrongRole.inScope, false);
+    assert.equal(wrongRole.active, false);
+  }
+
+  const supportEffect = "support-party-dmg";
+  assert.equal(
+    resolveEffect({
+      characterId: "1311",
+      setId: "33400",
+      effectId: supportEffect,
+    }).active,
+    true,
+  );
+  assert.equal(
+    resolveEffect({
+      characterId: "1041",
+      setId: "33400",
+      effectId: supportEffect,
+    }).active,
+    false,
+  );
+
+  const defenseEffect = "defense-assist-party-dmg";
+  assert.equal(
+    resolveEffect({
+      characterId: "1341",
+      setId: "33700",
+      effectId: defenseEffect,
+    }).active,
+    true,
+  );
+  assert.equal(
+    resolveEffect({
+      characterId: "1041",
+      setId: "33700",
+      effectId: defenseEffect,
+    }).active,
+    false,
+  );
+});
+
+test("mixed-role disc sets keep base effects universal and gate attack bonuses", () => {
+  const resolveEffects = (characterId, setId) => {
+    const character = CHARACTERS.find((item) => item.id === characterId);
+    return resolveDiscBuild({
+      profile: {
+        discBuildMode: "manual",
+        discFourPieceId: setId,
+        discTwoPieceId: "31500",
+        discEffectMode: "max",
+      },
+      character,
+      mode: "strong",
+      skillType: "normal",
+    }).effects;
+  };
+  const findFourPiece = (effects, setId, effectId) =>
+    effects.find((effect) => effect.key === `${setId}:4:${effectId}`);
+
+  const dawnAttack = resolveEffects("1041", "33300");
+  const dawnSupport = resolveEffects("1311", "33300");
+  assert.equal(
+    findFourPiece(dawnAttack, "33300", "basic-dmg").active,
+    true,
+  );
+  assert.equal(
+    findFourPiece(dawnSupport, "33300", "basic-dmg").active,
+    true,
+  );
+  assert.equal(
+    findFourPiece(
+      dawnAttack,
+      "33300",
+      "attack-ex-ultimate-basic-dmg",
+    ).active,
+    true,
+  );
+  assert.equal(
+    findFourPiece(
+      dawnSupport,
+      "33300",
+      "attack-ex-ultimate-basic-dmg",
+    ).active,
+    false,
+  );
+
+  const balladAttack = resolveEffects("1041", "33500");
+  const balladSupport = resolveEffects("1311", "33500");
+  assert.equal(
+    findFourPiece(balladAttack, "33500", "ether-veil-crit").active,
+    true,
+  );
+  assert.equal(
+    findFourPiece(balladSupport, "33500", "ether-veil-crit").active,
+    true,
+  );
+  assert.equal(
+    findFourPiece(
+      balladAttack,
+      "33500",
+      "attack-ether-veil-crit-atk",
+    ).active,
+    true,
+  );
+  assert.equal(
+    findFourPiece(
+      balladSupport,
+      "33500",
+      "attack-ether-veil-crit-atk",
+    ).active,
+    false,
+  );
+});
+
 test("version 3 state migration enables automatic effects without reverting discs", () => {
   const saved = createDefaultComparisonState();
   saved.version = 3;
@@ -433,11 +801,25 @@ test("version 3 state migration enables automatic effects without reverting disc
 
   const migrated = mergeComparisonState(saved);
 
-  assert.equal(migrated.version, 4);
+  assert.equal(migrated.version, 7);
+  assert.equal(migrated.common.stunned, true);
   assert.equal(migrated.profiles.A.discBuildMode, "attack");
+  assert.equal(migrated.profiles.A.discEffectMode, "max");
   assert.equal(migrated.profiles.A.mindscapeEffectMode, "max");
   assert.equal(migrated.profiles.A.weaponEffectMode, "max");
   assert.equal(migrated.profiles.A.weaponRefinement, 1);
+});
+
+test("current saved state preserves an explicit non-stunned comparison", () => {
+  const saved = createDefaultComparisonState();
+  saved.common.stunned = false;
+
+  const merged = mergeComparisonState(saved);
+  const empty = mergeComparisonState(undefined);
+
+  assert.equal(merged.version, 7);
+  assert.equal(merged.common.stunned, false);
+  assert.equal(empty.common.stunned, true);
 });
 
 test("a selected 4-piece grants its 2-piece bonus and max mode is explicit", () => {

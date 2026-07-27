@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; connect-src 'none'; script-src 'self'; style-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'"
+    />
     <meta
       name="description"
       content="젠레스 존 제로 캐릭터·W-엔진 투자안을 비교하고 강공·명파·이상 데미지를 상세 계산하는 비공식 팬 도구"
@@ -10,7 +15,7 @@
     <meta name="theme-color" content="#0b0d10" />
     <title>뉴에리두 투자 비교 · 전투 계산기</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="./styles.css?v=20260727-2" />
+    <link rel="stylesheet" href="./styles.css?v=20260728-1" />
   </head>
   <body>
     <a class="skip-link" href="#calculator-content">계산기로 바로가기</a>
@@ -343,6 +348,6 @@
     <noscript>
       <div class="noscript">계산기를 사용하려면 JavaScript를 활성화해 주세요.</div>
     </noscript>
-    <script type="module" src="./src/app.js?v=20260727-2"></script>
+    <script type="module" src="./src/app.js?v=20260728-1"></script>
   </body>
 </html>

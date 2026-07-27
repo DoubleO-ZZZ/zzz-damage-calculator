@@ -54,6 +54,7 @@ export function calculateDefenseMultiplier({
   enemyDefense,
   enemyDefenseIncreasePercent = 0,
   enemyDefenseReductionPercent = 0,
+  enemyDefenseIgnorePercent = 0,
   penetrationPercent = 0,
   penetrationValue = 0,
 }) {
@@ -63,6 +64,7 @@ export function calculateDefenseMultiplier({
       (1 +
         percent(enemyDefenseIncreasePercent, "enemyDefenseIncreasePercent") -
         percent(enemyDefenseReductionPercent, "enemyDefenseReductionPercent")) *
+      (1 - percent(enemyDefenseIgnorePercent, "enemyDefenseIgnorePercent")) *
       (1 - percent(penetrationPercent, "penetrationPercent")) -
       number(penetrationValue, "penetrationValue"),
   );

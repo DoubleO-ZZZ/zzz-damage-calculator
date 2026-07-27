@@ -14,6 +14,10 @@ import {
 } from "./data/catalog.js";
 import { DISC_SET_BY_ID, DISC_SETS } from "./data/discs.js";
 import {
+  ENEMY_BY_ID,
+  S_RANK_ENEMIES,
+} from "./data/enemies.js";
+import {
   characterElement,
   characterImage,
   discImage,
@@ -34,6 +38,24 @@ const LIVE_CHARACTERS = CHARACTERS.filter(
     character.version.includes("3.0 live") &&
     COMPARISON_SPECIALTIES.has(character.specialty),
 );
+const LIVE_PARTY_CHARACTERS = CHARACTERS.filter((character) =>
+  character.version.includes("3.0 live"),
+);
+const PARTY_CHARACTER_PRIORITY = Object.freeze([
+  "1311",
+  "1161",
+  "1031",
+  "1151",
+  "1211",
+  "1341",
+]);
+const DEFAULT_PARTY_DISC_BY_SPECIALTY = Object.freeze({
+  지원: "33400",
+  격파: "33200",
+  방어: "33700",
+  이상: "31300",
+  명파: "33700",
+});
 const formatter = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
@@ -119,15 +141,21 @@ function liveWeapons(character) {
   );
 }
 
+function signatureWeaponIds(character) {
+  const prefix = character.id.slice(0, 3);
+  return [`14${prefix}`, `13${prefix}`];
+}
+
 function alignProfileWeapon(profile, character) {
   const options = liveWeapons(character);
   if (
     profile.weaponId !== "custom" &&
     !options.some((weapon) => weapon.id === profile.weaponId)
   ) {
-    const signatureId = `14${character.id.slice(0, 3)}`;
     profile.weaponId =
-      options.find((weapon) => weapon.id === signatureId)?.id ??
+      options.find((weapon) =>
+        signatureWeaponIds(character).includes(weapon.id),
+      )?.id ??
       options[0]?.id ??
       "custom";
   }
@@ -135,9 +163,10 @@ function alignProfileWeapon(profile, character) {
 
 function suggestedPlanWeapons(character) {
   const options = liveWeapons(character);
-  const signatureId = `14${character.id.slice(0, 3)}`;
   const primary =
-    options.find((weapon) => weapon.id === signatureId) ??
+    options.find((weapon) =>
+      signatureWeaponIds(character).includes(weapon.id),
+    ) ??
     options.find((weapon) => weapon.rank === "S급") ??
     options[0];
   const alternative =
@@ -152,12 +181,82 @@ function suggestedPlanWeapons(character) {
   };
 }
 
+function defaultPartyDisc(character) {
+  return (
+    DEFAULT_PARTY_DISC_BY_SPECIALTY[character?.specialty] ??
+    "31900"
+  );
+}
+
+function alignPartyMember(member, character, { resetDisc = false } = {}) {
+  const options = liveWeapons(character);
+  if (!options.some((weapon) => weapon.id === member.weaponId)) {
+    member.weaponId =
+      options.find((weapon) =>
+        signatureWeaponIds(character).includes(weapon.id),
+      )?.id ??
+      options[0]?.id ??
+      "";
+  }
+  const refinement = Math.trunc(Number(member.weaponRefinement));
+  member.weaponRefinement = Number.isFinite(refinement)
+    ? Math.min(5, Math.max(1, refinement))
+    : 1;
+  if (
+    resetDisc ||
+    !DISC_SET_BY_ID[String(member.discFourPieceId)]
+  ) {
+    member.discFourPieceId = defaultPartyDisc(character);
+  }
+}
+
+function fallbackPartyCharacter(used) {
+  return (
+    PARTY_CHARACTER_PRIORITY.map((id) => CHARACTER_BY_ID[id]).find(
+      (character) => character && !used.has(character.id),
+    ) ??
+    LIVE_PARTY_CHARACTERS.find((character) => !used.has(character.id)) ??
+    LIVE_PARTY_CHARACTERS[0]
+  );
+}
+
 function normalizeSelections() {
   const character =
     LIVE_CHARACTERS.find(
       (item) => item.id === comparisonState.common.characterId,
     ) ?? CHARACTER_BY_ID["1041"];
   comparisonState.common.characterId = character.id;
+  comparisonState.common.enemyId = ENEMY_BY_ID[
+    String(comparisonState.common.enemyId)
+  ]
+    ? String(comparisonState.common.enemyId)
+    : "30032";
+  comparisonState.common.party ??= {};
+  const usedPartyCharacters = new Set([character.id]);
+  for (const [slotKey, slot] of [
+    ["member2", 2],
+    ["member3", 3],
+  ]) {
+    const member = {
+      ...(comparisonState.common.party[slotKey] ?? {}),
+      slot,
+    };
+    let memberCharacter = LIVE_PARTY_CHARACTERS.find(
+      (item) =>
+        item.id === String(member.characterId) &&
+        !usedPartyCharacters.has(item.id),
+    );
+    if (!memberCharacter) {
+      memberCharacter = fallbackPartyCharacter(usedPartyCharacters);
+      member.characterId = memberCharacter.id;
+      alignPartyMember(member, memberCharacter, { resetDisc: true });
+    } else {
+      member.characterId = memberCharacter.id;
+      alignPartyMember(member, memberCharacter);
+    }
+    usedPartyCharacters.add(memberCharacter.id);
+    comparisonState.common.party[slotKey] = member;
+  }
   for (const profile of Object.values(comparisonState.profiles)) {
     profile.characterId = character.id;
     const refinement = Math.trunc(Number(profile.weaponRefinement));
@@ -208,6 +307,8 @@ function applyModeChoice(mode) {
 
 function stateTarget(scope) {
   if (scope === "common") return comparisonState.common;
+  if (scope === "party-2") return comparisonState.common.party.member2;
+  if (scope === "party-3") return comparisonState.common.party.member3;
   if (scope === "profile-A") return comparisonState.profiles.A;
   if (scope === "profile-B") return comparisonState.profiles.B;
   return null;
@@ -394,17 +495,368 @@ function renderCharacterPicker(character) {
   `;
 }
 
-function renderCommon(character) {
+const SUPPORT_STAT_LABELS = Object.freeze({
+  initialAttack: "초기 공격력",
+  initialHp: "초기 HP",
+  critRate: "치명타 확률",
+  penetrationRatio: "관통률",
+  impact: "충격력",
+  anomalyMastery: "이상 장악력",
+  energyRegen: "에너지 자동 회복",
+});
+
+const PARTY_EFFECT_STAT_LABELS = Object.freeze({
+  attackPercent: "공격력",
+  flatAttack: "고정 공격력",
+  hpPercent: "HP",
+  flatPenetration: "관입력",
+  critRate: "치명타 확률",
+  critDamage: "치명타 피해",
+  damageBonus: "피해 보너스",
+  penetrationPercent: "관통률",
+  defenseReduction: "방어력 감소",
+  defenseIgnore: "방어력 무시",
+  resistanceReduction: "저항 감소",
+  resistanceIgnore: "저항 무시",
+  receivedDamageIncrease: "받는 피해 증가",
+  anomalyProficiency: "이상 마스터리",
+  anomalyMasteryFlat: "이상 장악력",
+  anomalyDamageBonus: "이상 피해",
+  stunMultiplier: "그로기 약체 배율",
+});
+
+function supportStatValue(stat, value) {
+  const formatted = decimalFormatter.format(value);
+  if (
+    stat === "critRate" ||
+    stat === "penetrationRatio"
+  ) {
+    return `${formatted}%`;
+  }
+  if (stat === "energyRegen") return formatted;
+  return formatted;
+}
+
+function partyEffectValue(stat, value) {
+  const formatted = decimalFormatter.format(value);
+  return ["flatAttack", "flatPenetration", "anomalyProficiency", "anomalyMasteryFlat"]
+    .includes(stat)
+    ? `+${formatted}`
+    : `+${formatted}%`;
+}
+
+function partySkippedReason(reason) {
+  if (reason === "non-stacking-duplicate") {
+    return "같은 효과는 가장 높은 수치만 적용";
+  }
+  if (reason === "inactive") return "최대 발동 옵션이 꺼짐";
+  if (reason === "eligibility") return "추가 능력의 파티 편성 조건 불충족";
+  if (reason?.startsWith("scope:")) {
+    return "속성·직군·공격 유형 적용 조건 불충족";
+  }
+  if (reason === "scope") return "착용자 또는 딜러의 속성 조건 불충족";
+  if (reason === "condition") return "발동 조건 불충족";
+  return reason || "현재 조합에서 비활성";
+}
+
+function renderEnemyPicker(character, enemy) {
+  const element = characterElement(character.id);
+  const elementLabel = ELEMENT_LABELS[element] ?? element;
+  const selected = enemy ?? ENEMY_BY_ID[comparisonState.common.enemyId];
+  return `
+    <article class="enemy-picker">
+      <div class="enemy-picker__visual">
+        ${imageMarkup(
+          selected.icon,
+          selected.name,
+          "enemy-picker__image",
+        )}
+        <span>S</span>
+      </div>
+      <div class="enemy-picker__body">
+        <span class="build-selector__label">비교 대상</span>
+        <h4>${escapeHtml(selected.name)}</h4>
+        <p>
+          Lv.70 환산 방어력 ${formatter.format(selected.defenseAt60)}
+          · ${escapeHtml(elementLabel)} 저항
+          ${selected.resistances[element] > 0 ? "+" : ""}${decimalFormatter.format(
+            selected.resistances[element] ?? 0,
+          )}%
+          · 그로기 ${decimalFormatter.format(
+            selected.stunMultiplierPercent,
+          )}%
+        </p>
+        ${selectField({
+          label: "S급 몬스터",
+          value: selected.id,
+          options: S_RANK_ENEMIES.map((item) => ({
+            value: item.id,
+            label: `${item.name} · 방어 ${formatter.format(item.defenseAt60)}`,
+          })),
+          scope: "common",
+          key: "enemyId",
+          hint: `${S_RANK_ENEMIES.length}종 · 속성 저항 자동 적용`,
+          wide: true,
+        })}
+      </div>
+      <a
+        class="catalog-source"
+        href="${escapeHtml(selected.sourceUrl)}"
+        target="_blank"
+        rel="noreferrer"
+      >적 데이터 원문 ↗</a>
+    </article>
+  `;
+}
+
+function renderPartyMember(slot, partyMember) {
+  const scope = `party-${slot}`;
+  const slotKey = `member${slot}`;
+  const member = comparisonState.common.party[slotKey];
+  const character = CHARACTER_BY_ID[member.characterId];
+  const weaponOptions = liveWeapons(character);
+  const weapon =
+    WEAPON_BY_ID[member.weaponId] ?? weaponOptions[0];
+  const disc = DISC_SET_BY_ID[member.discFourPieceId];
+  const build = partyMember?.build;
+  const mainLabels = {
+    attackPercent: "공격력%",
+    hpPercent: "HP%",
+    critRatePercent: "치확",
+    penetrationRatio: "관통률",
+    impactPercent: "충격력",
+    anomalyMasteryPercent: "이상 장악력",
+    energyRegenPercent: "에너지 회복",
+  };
+  const mains = Object.entries(build?.mains ?? {})
+    .filter(([, count]) => Number(count) > 0)
+    .map(([key, count]) => `${mainLabels[key] ?? key}${count > 1 ? ` ×${count}` : ""}`)
+    .join(" · ");
+  const cuts = build?.cuts ?? [];
+  return `
+    <article class="party-member-card">
+      <header>
+        <span>PARTY ${slot}</span>
+        <div>
+          <h4>${escapeHtml(character.name)}</h4>
+          <small>${escapeHtml(character.rank)} · ${escapeHtml(
+            ELEMENT_LABELS[characterElement(character.id)] ?? "",
+          )} · ${escapeHtml(character.specialty)}</small>
+        </div>
+      </header>
+      <div class="party-member-card__visuals">
+        ${imageMarkup(
+          characterImage(character.id),
+          character.name,
+          "party-member-card__portrait",
+        )}
+        ${imageMarkup(
+          weaponImage(weapon.id),
+          weapon.name,
+          "party-member-card__equipment",
+        )}
+        ${imageMarkup(
+          discImage(disc.id),
+          disc.name,
+          "party-member-card__equipment",
+        )}
+      </div>
+      <div class="party-member-card__controls">
+        ${selectField({
+          label: "캐릭터",
+          value: character.id,
+          options: LIVE_PARTY_CHARACTERS.map((item) => ({
+            value: item.id,
+            label: `${item.name} · ${item.specialty}`,
+          })),
+          scope,
+          key: "characterId",
+          wide: true,
+        })}
+        ${selectField({
+          label: "W-엔진",
+          value: weapon.id,
+          options: weaponOptions.map((item) => ({
+            value: item.id,
+            label: `${item.name} · ${item.rank}`,
+          })),
+          scope,
+          key: "weaponId",
+          wide: true,
+        })}
+        ${selectField({
+          label: "디스크 4세트",
+          value: disc.id,
+          options: DISC_SETS.map((item) => ({
+            value: item.id,
+            label: item.name,
+          })),
+          scope,
+          key: "discFourPieceId",
+          wide: true,
+        })}
+      </div>
+      ${segmentedChoices({
+        scope,
+        key: "weaponRefinement",
+        value: member.weaponRefinement,
+        type: "number",
+        options: Array.from({ length: 5 }, (_, index) => ({
+          value: index + 1,
+          label: `R${index + 1}`,
+        })),
+        label: "엔진 재련",
+      })}
+      <div class="party-auto-build">
+        <div>
+          <strong>자동 세팅</strong>
+          <span>${escapeHtml(
+            DISC_SET_BY_ID[build?.twoPieceId]?.name ?? "추천 2세트",
+          )} 2세트</span>
+          ${mains ? `<span>주옵 ${escapeHtml(mains)}</span>` : ""}
+          <span>컷까지 유효 부옵 ${formatter.format(
+            build?.rolls?.total ?? 0,
+          )}타</span>
+        </div>
+        ${
+          cuts.length
+            ? `<ul class="buff-cut-list">
+                ${cuts
+                  .map(
+                    (cut) => `<li class="${
+                      cut.reached ? "is-reached" : "is-unreached"
+                    }">
+                      <span>${escapeHtml(cut.label)}</span>
+                      <strong>${supportStatValue(
+                        cut.stat,
+                        cut.actual,
+                      )} / ${supportStatValue(
+                        cut.stat,
+                        cut.threshold,
+                      )}</strong>
+                      <small>${
+                        cut.reached
+                          ? `컷 충족 · ${cut.rolls}타 추가`
+                          : cut.attainable
+                            ? "부옵 한도 내 미달"
+                            : "현재 장비로 상한 도달 불가"
+                      }</small>
+                    </li>`,
+                  )
+                  .join("")}
+              </ul>`
+            : `<p class="party-auto-build__note">
+                별도 버프 컷 없음 · 역할 주옵과 2세트를 자동 배치합니다.
+              </p>`
+        }
+      </div>
+    </article>
+  `;
+}
+
+function renderPartyLedger(party) {
+  const active = party?.active ?? [];
+  const skipped = party?.skipped ?? [];
+  const unsupported = party?.unsupported ?? [];
+  if (!party) return "";
+  return `
+    <div class="party-ledger">
+      <div>
+        <strong>파티 버프 ${active.length}개 자동 적용</strong>
+        <small>요구 스탯을 충족한 핵심 패시브·추가 능력·스킬·엔진·4세트의 최대 발동 기준</small>
+      </div>
+      ${
+        active.length
+          ? `<ul>
+              ${active
+                .map(
+                  (effect) => `<li>
+                    <span>${escapeHtml(effect.ownerName || effect.sourceName)} · ${escapeHtml(
+                      effect.label,
+                    )}</span>
+                    <strong>${escapeHtml(
+                      PARTY_EFFECT_STAT_LABELS[effect.stat] ?? effect.stat,
+                    )} ${partyEffectValue(effect.stat, effect.amount)}</strong>
+                  </li>`,
+                )
+                .join("")}
+            </ul>`
+          : "<p>현재 조합에서 적용되는 파티 버프가 없습니다.</p>"
+      }
+      ${
+        skipped.length
+          ? `<details>
+              <summary>현재 조합에서 미적용 ${skipped.length}개</summary>
+              <ul>${skipped
+                .map(
+                  (effect) =>
+                    `<li><span>${escapeHtml(
+                      effect.ownerName || effect.sourceName,
+                    )} · ${escapeHtml(effect.label)}</span><small>${escapeHtml(
+                      partySkippedReason(effect.skippedReason),
+                    )}</small></li>`,
+                )
+                .join("")}</ul>
+            </details>`
+          : ""
+      }
+      ${
+        unsupported.length
+          ? `<details>
+              <summary>대표 1회 피해식에서 별도 처리 ${unsupported.length}개</summary>
+              <ul>${unsupported
+                .map(
+                  (effect) =>
+                    `<li><span>${escapeHtml(
+                      effect.ownerName || effect.sourceName,
+                    )} · ${escapeHtml(effect.label)}</span><small>${escapeHtml(
+                      effect.unsupportedReason ?? "별도 전투 지표",
+                    )}</small></li>`,
+                )
+                .join("")}</ul>
+            </details>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderPartyBuilder(result) {
+  const party = result?.party;
+  return `
+    <section class="party-builder">
+      <div class="party-builder__heading">
+        <div>
+          <span class="compare-step">02 · BUILD PARTY</span>
+          <h3>파티 조합</h3>
+          <p>
+            파티원은 캐릭터·엔진·4세트만 고르세요. 2세트·주옵·부옵은
+            각 캐릭터의 버프 상한을 넘기는 최소치로 자동 배치됩니다.
+          </p>
+        </div>
+        <span class="max-activation-badge">충족 가능한 버프 최대 활성</span>
+      </div>
+      <div class="party-member-grid">
+        ${renderPartyMember(2, party?.members?.[0])}
+        ${renderPartyMember(3, party?.members?.[1])}
+      </div>
+      ${renderPartyLedger(party)}
+    </section>
+  `;
+}
+
+function renderCommon(character, result = null) {
   const common = comparisonState.common;
   const suggestedMode = recommendedMode(character);
   return `
     ${renderCharacterPicker(character)}
+    ${renderPartyBuilder(result)}
     <section class="comparison-common">
       <div class="comparison-common__heading">
         <div>
-          <span class="compare-step">02 · SHARED CONDITIONS</span>
+          <span class="compare-step">03 · SHARED CONDITIONS</span>
           <h3>대표 피해 조건</h3>
-          <p>피해 종류만 고르면 두 투자안에 똑같이 적용됩니다.</p>
+          <p>공격 종류와 S급 적만 고르면 두 투자안에 똑같이 적용됩니다.</p>
         </div>
         <div class="comparison-actions">
           <button type="button" data-compare-action="copy-a-to-b">A를 B로 복사</button>
@@ -419,6 +871,7 @@ function renderCommon(character) {
             </p>`
           : ""
       }
+      ${renderEnemyPicker(character, result?.enemy)}
       <div class="compare-quick-row">
         ${selectField({
           label: "계산식",
@@ -466,24 +919,17 @@ function renderCommon(character) {
           checked: common.stunned,
           scope: "common",
           key: "stunned",
-          hint: "그로기 배율 적용",
+          hint: "그로기 배율·조건 효과 최대 적용",
         })}
       </div>
       <details class="compare-advanced compare-advanced--common">
-        <summary>적·파티 수치 직접 조정</summary>
-        <p>기본 비교에는 열 필요가 없습니다. 실제 파티 버프를 맞출 때만 사용하세요.</p>
+        <summary>추가 보정 수치 직접 조정</summary>
+        <p>선택한 적과 파티 효과에 더할 외부 보정이 있을 때만 사용하세요.</p>
         <div class="compare-field-grid">
           ${
             common.mode !== "mingpo"
               ? numberField({
-                  label: "적 방어력",
-                  value: common.enemyDefense,
-                  scope: "common",
-                  key: "enemyDefense",
-                  unit: "pt",
-                }) +
-                numberField({
-                  label: "방어력 감소",
+                  label: "추가 방어력 감소",
                   value: common.enemyDefenseReductionPercent,
                   scope: "common",
                   key: "enemyDefenseReductionPercent",
@@ -492,35 +938,35 @@ function renderCommon(character) {
               : ""
           }
           ${numberField({
-            label: "적 속성 저항",
-            value: common.enemyResistancePercent,
+            label: "적 저항 추가 보정",
+            value: common.enemyResistanceAdjustmentPercent,
             scope: "common",
-            key: "enemyResistancePercent",
+            key: "enemyResistanceAdjustmentPercent",
             unit: "%",
           })}
           ${numberField({
-            label: "공통 저항 감소",
+            label: "추가 저항 감소",
             value: common.resistanceReductionPercent,
             scope: "common",
             key: "resistanceReductionPercent",
             unit: "%",
           })}
           ${numberField({
-            label: "파티 공격력",
+            label: "추가 파티 공격력",
             value: common.attackPercentBuff,
             scope: "common",
             key: "attackPercentBuff",
             unit: "%",
           })}
           ${numberField({
-            label: "파티 고정 공격력",
+            label: "추가 고정 공격력",
             value: common.flatAttackBuff,
             scope: "common",
             key: "flatAttackBuff",
             unit: "pt",
           })}
           ${numberField({
-            label: "파티 피해 보너스",
+            label: "추가 피해 보너스",
             value: common.partyDamageBonusPercent,
             scope: "common",
             key: "partyDamageBonusPercent",
@@ -529,7 +975,7 @@ function renderCommon(character) {
           ${
             common.mode !== "anomaly"
               ? numberField({
-                  label: "파티 치명타 피해",
+                  label: "추가 치명타 피해",
                   value: common.partyCriticalDamagePercent,
                   scope: "common",
                   key: "partyCriticalDamagePercent",
@@ -540,14 +986,14 @@ function renderCommon(character) {
           ${
             common.mode === "mingpo"
               ? numberField({
-                  label: "파티 HP",
+                  label: "추가 파티 HP",
                   value: common.hpPercentBuff,
                   scope: "common",
                   key: "hpPercentBuff",
                   unit: "%",
                 }) +
                 numberField({
-                  label: "파티 고정 관입력",
+                  label: "추가 고정 관입력",
                   value: common.flatPenetrationBuff,
                   scope: "common",
                   key: "flatPenetrationBuff",
@@ -743,7 +1189,7 @@ function renderDiscPreset(id, profile, profileResult, mode) {
     build.rolls && build.type === "anomaly"
       ? `이상마 ${build.rolls.anomalyProficiency}타 · 공격력 ${build.rolls.attackPercent}타`
       : build.rolls
-        ? `치확 ${build.rolls.critRatePercent}타 · 치피 ${build.rolls.critDamagePercent}타 · 공격력 ${build.rolls.attackPercent}타`
+        ? `6번 ${build.critMainStat === "critDamage" ? "치피" : "치확"} 주옵 · 치확 ${build.rolls.critRatePercent}타 · 치피 ${build.rolls.critDamagePercent}타 · 공격력 ${build.rolls.attackPercent}타`
         : "직접 입력 수치 사용";
   return `
     <section class="disc-workbench">
@@ -840,12 +1286,30 @@ function renderEffectSummary(profileResult) {
   const weaponPassive = profileResult.weaponPassive;
   const appliedWeapon = weaponPassive?.applied ?? [];
   const unsupportedWeapon = weaponPassive?.unsupported ?? [];
+  const agentEffects = profileResult.agentEffects;
+  const appliedAgent = (agentEffects?.applied ?? []).filter(
+    (effect) =>
+      ["self", "party", "active", "enemy"].includes(effect.target),
+  );
+  const unsupportedAgent = agentEffects?.unsupported ?? [];
   const scopedOutMindscape = (mindscape?.skipped ?? []).filter((effect) =>
     effect.skippedReason?.startsWith("scope:"),
   );
   const scopedOutWeapon = (weaponPassive?.skipped ?? []).filter((effect) =>
     effect.skippedReason?.startsWith("scope:"),
   );
+  const scopedOutAgent = (agentEffects?.skipped ?? []).filter(
+    (effect) =>
+      effect.skippedReason?.startsWith("scope:") ||
+      effect.skippedReason?.startsWith("stat:") ||
+      effect.skippedReason === "eligibility",
+  );
+  const originLabel = (origin) =>
+    ({
+      core: "핵심 패시브",
+      additional: "추가 능력",
+      skill: "스킬",
+    })[origin] ?? "캐릭터 효과";
   const weaponEffectLabel = (effect) =>
     effect?.label ?? effect?.title ?? effect?.stat ?? weaponPassive?.title ??
     "엔진 효과";
@@ -856,6 +1320,9 @@ function renderEffectSummary(profileResult) {
       element: "캐릭터 속성",
       anomalyKey: "이상 종류",
       skillType: "대표 공격",
+      skill: "대표 공격",
+      specialty: "딜러 특성",
+      stunned: "그로기 상태",
       characterId: "장착 캐릭터",
     }[key] ?? "선택 조건";
   };
@@ -866,7 +1333,8 @@ function renderEffectSummary(profileResult) {
         ${
           activeDiscEffects.length +
               appliedMindscape.length +
-              appliedWeapon.length ===
+              appliedWeapon.length +
+              appliedAgent.length ===
             0
             ? "<small>상시 효과 없음 · 조건부는 미발동</small>"
             : `<ul>
@@ -898,18 +1366,28 @@ function renderEffectSummary(profileResult) {
                       }</li>`,
                   )
                   .join("")}
+                ${appliedAgent
+                  .map(
+                    (effect) =>
+                      `<li>${escapeHtml(originLabel(effect.origin))} · ${escapeHtml(
+                        effect.label,
+                      )}</li>`,
+                  )
+                  .join("")}
               </ul>`
         }
       </div>
       ${
         unsupportedMindscape.length +
           unsupportedDiscEffects.length +
-          unsupportedWeapon.length
+          unsupportedWeapon.length +
+          unsupportedAgent.length
           ? `<details>
               <summary>현재 대표식에서 제외 ${
                 unsupportedMindscape.length +
                 unsupportedDiscEffects.length +
-                unsupportedWeapon.length
+                unsupportedWeapon.length +
+                unsupportedAgent.length
               }개</summary>
               <ul>${unsupportedDiscEffects
                 .map(
@@ -936,15 +1414,28 @@ function renderEffectSummary(profileResult) {
                       effect.reason ?? "별도 피해식 필요",
                     )}</li>`,
                 )
+                .join("")}${unsupportedAgent
+                .map(
+                  (effect) =>
+                    `<li>${escapeHtml(originLabel(effect.origin))} · ${escapeHtml(
+                      effect.label,
+                    )} — ${escapeHtml(
+                      effect.unsupportedReason ?? "별도 피해식 필요",
+                    )}</li>`,
+                )
                 .join("")}</ul>
             </details>`
           : ""
       }
       ${
-        scopedOutMindscape.length + scopedOutWeapon.length
+        scopedOutMindscape.length +
+          scopedOutWeapon.length +
+          scopedOutAgent.length
           ? `<details>
               <summary>선택 조건에서 미적용 ${
-                scopedOutMindscape.length + scopedOutWeapon.length
+                scopedOutMindscape.length +
+                scopedOutWeapon.length +
+                scopedOutAgent.length
               }개</summary>
               <ul>${scopedOutMindscape
                 .map(
@@ -965,6 +1456,19 @@ function renderEffectSummary(profileResult) {
                     )} — ${escapeHtml(
                       scopeReason(effect.skippedReason),
                     )} 불일치</li>`,
+                )
+                .join("")}${scopedOutAgent
+                .map(
+                  (effect) =>
+                    `<li>${escapeHtml(originLabel(effect.origin))} · ${escapeHtml(
+                      effect.label,
+                    )} — ${escapeHtml(
+                      effect.skippedReason === "eligibility"
+                        ? "파티 편성 조건 불일치"
+                        : effect.skippedReason?.startsWith("stat:")
+                          ? "요구 능력치 미달"
+                        : `${scopeReason(effect.skippedReason)} 불일치`,
+                    )}</li>`,
                 )
                 .join("")}</ul>
             </details>`
@@ -1338,11 +1842,19 @@ function renderResult(providedResult) {
             ? null
             : decimalFormatter.format(data.anomalyProficiency),
         )}
+        ${resultMetric(
+          "치명타 확률",
+          data.discBuild?.type === "attack"
+            ? `${decimalFormatter.format(
+                Math.min(100, data.discBuild.totalCritRate),
+              )}%`
+            : null,
+        )}
       </div>
     </article>`;
   target.innerHTML = `
     <div class="comparison-result__heading">
-      <div><span class="compare-step">04 · VERDICT</span><h3>비교 결과</h3></div>
+      <div><span class="compare-step">05 · VERDICT</span><h3>비교 결과</h3></div>
       <span class="verdict-chip verdict-chip--${result.winner}" role="status">
         ${winnerLabel} · ${deltaPercent}
       </span>
@@ -1361,10 +1873,10 @@ function renderResult(providedResult) {
     <div class="comparison-assumptions">
       <strong>자동 반영 범위</strong>
       <p>
-        라이브 3.0의 60레벨 기초 수치, 엔진 기초·고급 속성과 재련별 패시브,
-        디스크 주옵·유효 부옵 프리셋, 2·4세트 효과와 적용 가능한 시네마
-        수치를 합산했습니다. 조건부 효과는 각 투자안의 ‘조건 최대’ 선택 때
-        최대치로 계산합니다.
+        라이브 3.0의 핵심 패시브·추가 능력·스킬, 파티원 엔진과 디스크,
+        딜러 엔진 재련·시네마·디스크를 합산했습니다. 치확은 이 고정 효과를
+        먼저 더한 뒤 100%를 넘지 않는 범위에서만 부옵을 배분합니다.
+        파티 조건부 버프는 요구 스탯을 충족한 효과를 최대 활성화한 상한 비교입니다.
       </p>
     </div>
   `;
@@ -1386,7 +1898,7 @@ function render() {
   }
   if (!result) {
     root.innerHTML = `
-      ${renderCommon(character)}
+      ${renderCommon(character, null)}
       <div class="comparison-error">
         <strong>저장된 비교 조건을 계산할 수 없습니다.</strong>
         <p>${escapeHtml(
@@ -1397,11 +1909,11 @@ function render() {
     return;
   }
   root.innerHTML = `
-    ${renderCommon(character)}
+    ${renderCommon(character, result)}
     <section class="comparison-plans">
       <div class="comparison-plans__heading">
         <div>
-          <span class="compare-step">03 · BUILD TWO PLANS</span>
+          <span class="compare-step">04 · BUILD TWO PLANS</span>
           <h3>투자안 A/B</h3>
           <p>이미지로 엔진과 4+2세트를 고르고, 프리셋 점수만 선택하세요.</p>
         </div>
@@ -1456,6 +1968,19 @@ function applyCharacterChoice(characterId) {
   }
 }
 
+function applyPartyCharacterChoice(scope, characterId) {
+  const target = stateTarget(scope);
+  const character = LIVE_PARTY_CHARACTERS.find(
+    (item) => item.id === String(characterId),
+  );
+  if (!target || !character) return;
+  target.characterId = character.id;
+  target.weaponId = "";
+  alignPartyMember(target, character, { resetDisc: true });
+  target.weaponRefinement =
+    WEAPON_BY_ID[target.weaponId]?.rank === "S급" ? 1 : 5;
+}
+
 function handleChoice(event) {
   const button = event.target.closest("[data-compare-choice]");
   if (!button) return false;
@@ -1469,7 +1994,10 @@ function handleChoice(event) {
       : button.dataset.compareValue;
   target[key] = value;
 
-  if (key === "characterId") {
+  if (
+    key === "characterId" &&
+    button.dataset.compareScope === "common"
+  ) {
     applyCharacterChoice(String(value));
   }
   if (key === "mode") {
@@ -1536,9 +2064,22 @@ function handleInput(event) {
     ?.querySelector(".compare-input-error");
   if (note) note.textContent = "";
   target[input.dataset.compareKey] = value;
+  const scope = input.dataset.compareScope;
+  const key = input.dataset.compareKey;
+  if (scope.startsWith("party-") && key === "characterId") {
+    applyPartyCharacterChoice(scope, value);
+  }
   if (
-    input.dataset.compareScope === "common" &&
-    input.dataset.compareKey === "mode"
+    scope.startsWith("party-") &&
+    key === "weaponId" &&
+    WEAPON_BY_ID[value]
+  ) {
+    target.weaponRefinement =
+      WEAPON_BY_ID[value].rank === "S급" ? 1 : 5;
+  }
+  if (
+    scope === "common" &&
+    key === "mode"
   ) {
     applyModeChoice(value);
   }

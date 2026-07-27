@@ -10,6 +10,7 @@ export const WEAPON_PASSIVE_SUPPORTED_STATS = Object.freeze([
   "damageBonus",
   "penetrationPercent",
   "defenseReduction",
+  "defenseIgnore",
   "resistanceIgnore",
   "resistanceReduction",
   "anomalyProficiency",
@@ -419,11 +420,11 @@ const STRONG_WEAPONS = [
       values(45, 51.75, 58.5, 65.25, 72),
       { sourceNote: "상시 적용" },
     ),
-    unsupported(
+    toggle(
       "defense-ignore",
       "방어력 무시",
+      "defenseIgnore",
       values(25, 28.75, 32.5, 36.25, 40),
-      "방어력 무시는 방어력 감소와 별개이며 현재 공통 totals에 안전한 필드가 없습니다.",
       {
         mode: "strong",
         triggerSkillTypes: ["ex", "ex-special", "chain", "ultimate"],
@@ -440,14 +441,14 @@ const STRONG_WEAPONS = [
       values(20, 23, 26, 29, 32),
       { sourceNote: "상시 적용" },
     ),
-    unsupported(
+    stacks(
       "defense-ignore",
       "방어력 무시",
+      "defenseIgnore",
       values(15, 17.2, 19.5, 21.7, 24),
-      "방어력 무시는 방어력 감소와 별개이며 현재 공통 totals에 안전한 필드가 없습니다.",
+      2,
       {
         mode: "strong",
-        maxStacks: 2,
         triggerSkillTypes: ["aftershock"],
         triggerElement: "불",
         sourceNote: "불 속성 추가 공격 발동 시 스택, 8초",
@@ -560,11 +561,11 @@ const STRONG_WEAPONS = [
         sourceNote: "일반/강화 특수 스킬로 스택, 스택별 40초",
       },
     ),
-    unsupported(
+    toggle(
       "defense-ignore",
       "일반·궁극기 방어력 무시",
+      "defenseIgnore",
       values(20, 23, 26, 29, 32),
-      "방어력 무시는 방어력 감소와 별개이며 현재 공통 totals에 안전한 필드가 없습니다.",
       {
         mode: "strong",
         skillTypes: ["basic", "ultimate"],
@@ -582,11 +583,11 @@ const STRONG_WEAPONS = [
       values(25, 28.8, 32.5, 36.3, 40),
       { sourceNote: "상시 적용" },
     ),
-    unsupported(
+    toggle(
       "defense-ignore",
       "전기 피해 방어력 무시",
+      "defenseIgnore",
       values(28, 31.5, 35, 38.5, 42),
-      "방어력 무시는 방어력 감소와 별개이며 현재 공통 totals에 안전한 필드가 없습니다.",
       {
         element: "전기",
         condition: "consume-20-energy",

@@ -35,6 +35,7 @@ export const MODELED_DISC_EFFECT_STATS = Object.freeze([
   "penetrationRatioPercent",
   "anomalyProficiency",
   "anomalyMasteryPercent",
+  "energyRegenPercent",
   "damageBonusPercent",
   "anomalyDamageBonusPercent",
   "penetrationDamageBonusPercent",
@@ -108,11 +109,17 @@ export function normalizeDiscSelections(profile, character, mode) {
   }
 }
 
-function scopeMatches(scope, { element, skillType }) {
+function scopeMatches(scope, { element, skillType, specialty }) {
   if (!scope) return true;
   if (
     scope.attributesAny &&
     !scope.attributesAny.includes(element)
+  ) {
+    return false;
+  }
+  if (
+    scope.specialtiesAny &&
+    !scope.specialtiesAny.includes(specialty)
   ) {
     return false;
   }
@@ -212,6 +219,7 @@ function aggregateSetEffects(resolvedEffects) {
     discCritDamagePercent: 0,
     discAnomalyProficiency: 0,
     discAnomalyMasteryPercent: 0,
+    discEnergyRegenPercent: 0,
     passiveAttackPercent: 0,
     passiveCritRatePercent: 0,
     passiveCritDamagePercent: 0,
@@ -266,6 +274,8 @@ function aggregateSetEffects(resolvedEffects) {
             : "passiveAnomalyMasteryPercent",
           value,
         );
+      } else if (stat === "energyRegenPercent") {
+        add(totals, "discEnergyRegenPercent", value);
       } else if (stat === "damageBonusPercent") {
         add(totals, "passiveDamageBonusPercent", value);
       } else if (stat === "anomalyDamageBonusPercent") {
@@ -308,7 +318,14 @@ function anomalyPreset(score) {
   };
 }
 
-function attackPreset(score, nonSubstatCritRate) {
+function attackPreset(
+  score,
+  nonSubstatCritRate,
+  {
+    critRateMainPercent = 24,
+    critDamageMainPercent = 0,
+  } = {},
+) {
   const critRollCapacity = 30;
   const safeCritRolls = Math.max(
     0,
@@ -328,9 +345,11 @@ function attackPreset(score, nonSubstatCritRate) {
   const critDamageRolls = Math.ceil(remaining / 2);
   const attackRolls = Math.floor(remaining / 2);
   const discCritRatePercent =
-    24 + critRateRolls * DISC_ROLL_VALUES.critRatePercent;
-  const totalCritRate = nonSubstatCritRate +
+    critRateMainPercent +
     critRateRolls * DISC_ROLL_VALUES.critRatePercent;
+  const rawTotalCritRate = nonSubstatCritRate +
+    critRateRolls * DISC_ROLL_VALUES.critRatePercent;
+  const totalCritRate = Math.min(100, rawTotalCritRate);
   const critExactCapReached =
     Math.abs(totalCritRate - 100) <= CRIT_EPSILON;
   const critUpperBoundReached =
@@ -352,6 +371,7 @@ function attackPreset(score, nonSubstatCritRate) {
     discHpPercent: 0,
     discCritRatePercent,
     discCritDamagePercent:
+      critDamageMainPercent +
       critDamageRolls * DISC_ROLL_VALUES.critDamagePercent,
     discAnomalyProficiency: 0,
     discAnomalyMasteryPercent: 0,
@@ -360,8 +380,10 @@ function attackPreset(score, nonSubstatCritRate) {
     critUpperBoundReached,
     critExactCapReached,
     critOverflowPercent: 0,
-    fixedCritOverflowPercent: Math.max(0, nonSubstatCritRate - 100),
+    fixedCritOverflowPercent: Math.max(0, rawTotalCritRate - 100),
     totalCritRate,
+    critMainStat:
+      critRateMainPercent > 0 ? "critRate" : "critDamage",
   };
 }
 
@@ -372,6 +394,8 @@ export function resolveDiscBuild({
   weaponAnomalyMasteryPercent = 0,
   mindscapeCritRatePercent = 0,
   mindscapeAnomalyMasteryPercent = 0,
+  externalCritRatePercent = 0,
+  externalAnomalyMasteryPercent = 0,
   mode = "strong",
   skillType = "normal",
 }) {
@@ -381,9 +405,11 @@ export function resolveDiscBuild({
       number(profile.discAnomalyMasteryPercent) +
       weaponAnomalyMasteryPercent +
       mindscapeAnomalyMasteryPercent +
+      externalAnomalyMasteryPercent +
       number(profile.passiveAnomalyMasteryPercent);
     const manualContext = {
       element: characterElement(character.id),
+      specialty: character.specialty,
       skillType,
       effectMode: profile.discEffectMode,
       anomalyMastery:
@@ -393,6 +419,7 @@ export function resolveDiscBuild({
         character.critRate +
         weaponCritRatePercent +
         mindscapeCritRatePercent +
+        externalCritRatePercent +
         number(profile.discCritRatePercent) +
         number(profile.passiveCritRatePercent),
     };
@@ -441,19 +468,31 @@ export function resolveDiscBuild({
     character.critRate +
     weaponCritRatePercent +
     mindscapeCritRatePercent +
+    externalCritRatePercent +
     number(profile.passiveCritRatePercent);
   const baseAnomalyMasteryPercent =
     weaponAnomalyMasteryPercent +
     mindscapeAnomalyMasteryPercent +
+    externalAnomalyMasteryPercent +
     number(profile.passiveAnomalyMasteryPercent);
   let effects = [];
   let setTotals = aggregateSetEffects(effects);
+  let critRateMainPercent =
+    type === "attack" &&
+    baseCritRate + 24 <= 100 + CRIT_EPSILON
+      ? 24
+      : 0;
+  let critDamageMainPercent =
+    type === "attack" && critRateMainPercent === 0 ? 48 : 0;
   let nonSubstatCritRate =
-    baseCritRate + (type === "attack" ? 24 : 0);
+    baseCritRate + critRateMainPercent;
   let preset =
     type === "anomaly"
       ? anomalyPreset(score)
-      : attackPreset(score, nonSubstatCritRate);
+      : attackPreset(score, nonSubstatCritRate, {
+          critRateMainPercent,
+          critDamageMainPercent,
+        });
   let previousSignature = "";
 
   // Some 4-piece effects depend on the finished crit/anomaly stat. Resolve
@@ -461,6 +500,7 @@ export function resolveDiscBuild({
   for (let iteration = 0; iteration < 8; iteration += 1) {
     const context = {
       element,
+      specialty: character.specialty,
       skillType,
       effectMode: profile.discEffectMode === "max" ? "max" : "off",
       anomalyMastery:
@@ -479,20 +519,32 @@ export function resolveDiscBuild({
     };
     const nextEffects = selectedDiscEffects(profile, context);
     const nextSetTotals = aggregateSetEffects(nextEffects);
-    const nextNonSubstatCritRate =
+    const nextFixedCritRate =
       baseCritRate +
-      (type === "attack" ? 24 : 0) +
       nextSetTotals.discCritRatePercent +
       nextSetTotals.passiveCritRatePercent;
+    const nextCritRateMainPercent =
+      type === "attack" &&
+      nextFixedCritRate + 24 <= 100 + CRIT_EPSILON
+        ? 24
+        : 0;
+    const nextCritDamageMainPercent =
+      type === "attack" && nextCritRateMainPercent === 0 ? 48 : 0;
+    const nextNonSubstatCritRate =
+      nextFixedCritRate + nextCritRateMainPercent;
     const nextPreset =
       type === "anomaly"
         ? preset
-        : attackPreset(score, nextNonSubstatCritRate);
+        : attackPreset(score, nextNonSubstatCritRate, {
+            critRateMainPercent: nextCritRateMainPercent,
+            critDamageMainPercent: nextCritDamageMainPercent,
+          });
     const signature = JSON.stringify({
       active: nextEffects
         .filter((effect) => effect.active)
         .map((effect) => effect.key),
       critRateRolls: nextPreset.rolls?.critRatePercent ?? 0,
+      critMainStat: nextPreset.critMainStat,
       setCritRate:
         nextSetTotals.discCritRatePercent +
         nextSetTotals.passiveCritRatePercent,
@@ -500,6 +552,8 @@ export function resolveDiscBuild({
 
     effects = nextEffects;
     setTotals = nextSetTotals;
+    critRateMainPercent = nextCritRateMainPercent;
+    critDamageMainPercent = nextCritDamageMainPercent;
     nonSubstatCritRate = nextNonSubstatCritRate;
     preset = nextPreset;
     if (signature === previousSignature) break;

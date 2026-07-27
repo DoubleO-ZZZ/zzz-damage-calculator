@@ -10,6 +10,7 @@ export const MINDSCAPE_SUPPORTED_STATS = Object.freeze([
   "damageBonus",
   "penetrationPercent",
   "defenseReduction",
+  "defenseIgnore",
   "resistanceIgnore",
   "resistanceReduction",
   "anomalyProficiency",
@@ -171,7 +172,7 @@ const entries = [
   defineCharacter("1291", "휴고", "strong", [
     toggle(1, "증오의 아이", "critRate", 12, { skillTypes: ["settlement"], sourceNote: "암연의 메아리 중 결산 치명타 확률 12%" }),
     toggle(1, "증오의 아이", "critDamage", 30, { skillTypes: ["settlement"], sourceNote: "암연의 메아리 중 결산 치명타 피해 30%" }),
-    unsupported(2, "내면의 소년", "방어력 무시는 현재 안전 정규화 대상에서 제외됩니다.", "결산 타격이 방어력 15% 무시"),
+    toggle(2, "내면의 소년", "defenseIgnore", 15, { skillTypes: ["settlement"], sourceNote: "결산 타격이 방어력 15% 무시" }),
     skillLevel(3, "독수독과"),
     toggle(4, "극작법", "resistanceIgnore", 12, { element: "얼음", sourceNote: "차지 사격 명중 표적의 얼음 저항 12% 무시, 15초" }),
     skillLevel(5, "열반"),
@@ -188,7 +189,7 @@ const entries = [
     unsupported(6, "마법의 씨앗", "레이저 명중마다 공격력 250%의 별도 추가 피해 패킷이 필요합니다."),
   ]),
   defineCharacter("1321", "이블린", "strong", [
-    unsupported(1, "엮어가는 꿈", "방어력 무시는 현재 안전 정규화 대상에서 제외됩니다.", "감금 표적 공격 시 방어력 12% 무시"),
+    toggle(1, "엮어가는 꿈", "defenseIgnore", 12, { sourceNote: "감금 표적 공격 시 방어력 12% 무시" }),
     always(2, "불 속에서 춤을", "attackPercent", 15, { sourceNote: "공격력 15% 상시 증가" }),
     skillLevel(3, "허물벗기"),
     toggle(4, "운명의 울림", "critDamage", 40, { sourceNote: "콤보/궁극기 후 실드 보유 중 치명타 피해 40%" }),
@@ -205,8 +206,8 @@ const entries = [
   ]),
   defineCharacter("1431", "엽빛나", "strong", [
     toggle(1, "꿈속의 나", "damageBonus", 10, { skillTypes: ["core:unity-extra-damage"], sourceNote: "합일 효과가 추가로 주는 피해 10%" }),
-    unsupported(1, "꿈속의 나", "방어력 무시는 현재 안전 정규화 대상에서 제외됩니다.", "합일 대상 방어력 20% 무시"),
-    unsupported(2, "빛과 그림자", "방어력 무시는 현재 안전 정규화 대상에서 제외됩니다.", "지정 EX/궁극기가 방어력 40% 무시"),
+    toggle(1, "꿈속의 나", "defenseIgnore", 20, { sourceNote: "합일 대상 방어력 20% 무시" }),
+    toggle(2, "빛과 그림자", "defenseIgnore", 40, { skillTypes: ["ex-special", "ultimate"], sourceNote: "지정 EX/궁극기가 방어력 40% 무시" }),
     skillLevel(3, "검객의 길"),
     unsupported(4, "함께 먼지 속으로", "장막 약체화 보너스 상한은 현재 단일 피해 배율과 직접 연결할 수 없습니다."),
     skillLevel(5, "작은 불씨의 인도"),
@@ -214,7 +215,7 @@ const entries = [
   ]),
   defineCharacter("1461", "「시드」", "strong", [
     toggle(1, "「동면기」", "critDamage", 30, { skillTypes: ["basic:falling-flower-collapse"], sourceNote: "해당 일반 공격 치명타 피해 30%" }),
-    unsupported(2, "「흡광법」", "방어력 무시는 현재 안전 정규화 대상에서 제외됩니다.", "포위 적용 에이전트가 방어력 20% 무시"),
+    toggle(2, "「흡광법」", "defenseIgnore", 20, { sourceNote: "포위 적용 에이전트가 방어력 20% 무시" }),
     stacks(2, "「흡광법」", "damageBonus", 5, 24, { skillTypes: ["basic:falling-flower-slaughter"], sourceNote: "직전 EX 에너지 5pt 소비당 이어지는 일반 공격 피해 5%, 총 60~120pt" }),
     skillLevel(3, "「발아설」"),
     toggle(4, "「방향조」", "damageBonus", 20, { skillTypes: ["ultimate"], sourceNote: "포위 상태에서 궁극기 피해 20%" }),
@@ -242,7 +243,7 @@ const entries = [
   ]),
 
   defineCharacter("1091", "미야비", "anomaly", [
-    unsupported(1, "설상가상", "방어력 무시는 현재 안전 정규화 대상에서 제외됩니다.", "서리와 달이 내리는 서리 1pt당 방어력 6%, 최대 6스택 무시"),
+    stacks(1, "설상가상", "defenseIgnore", 6, 6, { skillTypes: ["basic:frost-moon"], sourceNote: "서리와 달이 내리는 서리 1pt당 방어력 6%, 최대 6스택 무시" }),
     unsupported(1, "설상가상", "속성 이상 축적 효율은 단일 이상 피해량에 포함되지 않습니다."),
     toggle(2, "토납법", "damageBonus", 30, { skillTypes: ["basic:wind-flower", "dodge-counter"], sourceNote: "지정 일반 공격/회피 반격 피해 30%" }),
     always(2, "토납법", "critRate", 15, { sourceNote: "전장 진입 시 치명타 확률 15%" }),
@@ -283,7 +284,7 @@ const entries = [
   defineCharacter("1261", "제인", "anomaly", [
     stacks(1, "범죄 고문", "damageBonus", 0.1, 300, { sourceNote: "열광 중 이상 마스터리 1pt당 피해 0.1%, 최대 30%. 스택값은 적용할 pt" }),
     unsupported(1, "범죄 고문", "물리 이상 축적 효율은 단일 이상 피해량에 포함되지 않습니다."),
-    unsupported(2, "근주자적", "방어력 무시는 현재 안전 정규화 대상에서 제외됩니다.", "갉힘 표적 방어력 15% 무시"),
+    toggle(2, "근주자적", "defenseIgnore", 15, { anomalyKey: "강타", sourceNote: "갉힘 표적 방어력 15% 무시" }),
     unsupported(2, "근주자적", "강타 전용 치명타 피해 +50%는 이상 치명타 모델이 필요합니다."),
     skillLevel(3, "무명인"),
     toggle(4, "유연한 리드", "anomalyDamageBonus", 18, { sourceNote: "강타/혼돈 발동 후 파티 이상 피해 18%, 15초" }),
@@ -325,14 +326,14 @@ const entries = [
   defineCharacter("1501", "아리아", "anomaly", [
     unsupported(1, "활기찬 목소리", "난개 치명타 확률·피해와 초기 이상 장악력 연동은 전용 이상 치명타 모델이 필요합니다."),
     unsupported(1, "활기찬 목소리", "에테르 이상 축적 저항 무시는 단일 이상 피해량에 포함되지 않습니다."),
-    unsupported(2, "꿈같은 리듬", "방어력 무시는 현재 안전 정규화 대상에서 제외됩니다.", "공격/난개 방어력 16%, 망상의 시간 중 추가 8% 무시"),
+    toggle(2, "꿈같은 리듬", "defenseIgnore", 24, { anomalyKey: "난개", sourceNote: "공격/난개 방어력 16%, 망상의 시간 중 추가 8% 무시" }),
     skillLevel(3, "드리머"),
     unsupported(4, "기계 천사", "에너지·데시벨 회복은 단일 이상 피해량에 포함되지 않습니다."),
     skillLevel(5, "빗속의 눈물"),
     toggle(6, "구조체의 꿈", "damageBonus", 40, { element: "에테르", skillTypes: ["basic:enhanced-absolute-pitch", "ultimate"], sourceNote: "망상의 시간 중 지정 공격 에테르 피해 40%" }),
   ]),
   defineCharacter("1541", "프로미아", "anomaly", [
-    unsupported(1, "순진한 이상", "방어력 무시는 현재 안전 정규화 대상에서 제외됩니다.", "유죄 추정 표적에 대한 파티 난개 방어력 20% 무시"),
+    toggle(1, "순진한 이상", "defenseIgnore", 20, { anomalyKey: "난개", sourceNote: "유죄 추정 표적에 대한 파티 난개 방어력 20% 무시" }),
     always(2, "흔들리는 신념", "anomalyProficiency", 40, { sourceNote: "이상 마스터리 40pt 상시 증가" }),
     unsupported(2, "흔들리는 신념", "서리 형벌 난개 배율 +120%는 전용 난개 계수 모델이 필요합니다."),
     skillLevel(3, "잔혹한 달빛"),

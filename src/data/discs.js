@@ -598,12 +598,14 @@ export const DISC_SETS = Object.freeze([
     fourPiece: [
       effect({
         id: "stun-skill-party-crit-dmg",
+        scope: Object.freeze({ specialtiesAny: ["격파"] }),
         label: "격파 스킬 사용 후 파티 치명타 피해 +15%",
         effects: { critDamagePercent: 15 },
         condition: "격파 캐릭터가 강화 특수 또는 콤보 스킬 사용 후 15초",
       }),
       effect({
         id: "crit-threshold-party-crit-dmg",
+        scope: Object.freeze({ specialtiesAny: ["격파"] }),
         label: "치명타 확률 50% 이상이면 파티 치명타 피해 추가 +15%",
         effects: { critDamagePercent: 15 },
         condition: Object.freeze({
@@ -649,7 +651,10 @@ export const DISC_SETS = Object.freeze([
         label: "강공 스킬 사용 후 일반 공격 피해 추가 +20%",
         effects: { damageBonusPercent: 20 },
         condition: "강공 캐릭터가 강화 특수 스킬 또는 궁극기 사용 후 25초",
-        scope: Object.freeze({ skillTagsAny: ["basic"] }),
+        scope: Object.freeze({
+          skillTagsAny: ["basic"],
+          specialtiesAny: ["강공"],
+        }),
       }),
     ],
   }),
@@ -671,6 +676,7 @@ export const DISC_SETS = Object.freeze([
     fourPiece: [
       effect({
         id: "support-party-dmg",
+        scope: Object.freeze({ specialtiesAny: ["지원"] }),
         label: "지원 스킬 사용 후 파티가 주는 피해 +18%",
         effects: { damageBonusPercent: 18 },
         condition: "지원 캐릭터가 강화 특수 스킬 또는 궁극기 사용 후 25초",
@@ -702,6 +708,7 @@ export const DISC_SETS = Object.freeze([
       }),
       effect({
         id: "attack-ether-veil-crit-atk",
+        scope: Object.freeze({ specialtiesAny: ["강공"] }),
         label: "강공 캐릭터의 베일 활성·연장 후 치명타 확률·공격력 +10%",
         effects: { critRatePercent: 10, attackPercent: 10 },
         condition: "강공 캐릭터가 에테르 베일을 활성화하거나 지속시간 연장 후 30초",
@@ -757,6 +764,7 @@ export const DISC_SETS = Object.freeze([
     fourPiece: [
       effect({
         id: "defense-assist-party-dmg",
+        scope: Object.freeze({ specialtiesAny: ["방어"] }),
         label: "방어·지원 발동당 파티가 주는 피해 +6%",
         effects: { damageBonusPercent: 6 },
         condition: "방어 캐릭터의 강화 특수 또는 방어·회피 지원 발동",

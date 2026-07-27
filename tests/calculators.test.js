@@ -5,6 +5,7 @@ import {
   ANOMALY_DEALER_A_DEFAULTS,
   ANOMALY_DEALER_B_DEFAULTS,
   calculateAnomalyCoefficient,
+  calculateDefenseMultiplier,
   calculateDealerStats,
   calculateMainAnomalyDamage,
   calculateMainAnomalyDamageSlot,
@@ -22,6 +23,16 @@ const closeTo = (actual, expected, tolerance = 1e-9) => {
     `expected ${actual} to be within ${tolerance} of ${expected}`,
   );
 };
+
+test("방어력 감소와 방어력 무시는 서로 다른 곱연산으로 처리한다", () => {
+  const multiplier = calculateDefenseMultiplier({
+    enemyDefense: 953,
+    enemyDefenseReductionPercent: 40,
+    enemyDefenseIgnorePercent: 25,
+  });
+
+  closeTo(multiplier, 794 / (794 + 953 * 0.6 * 0.75));
+});
 
 test("강공 기본값이 원본 시트의 중간값과 표기 데미지를 재현한다", () => {
   const result = calculateStrongAttack();
