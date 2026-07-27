@@ -14,6 +14,7 @@ import {
   getMindscapeEffects,
   resolveMindscapeEffects,
 } from "./data/mindscapes.js";
+import { resolveWeaponPassiveEffects } from "./data/weapon-passives.js";
 import { characterElement, ELEMENT_LABELS } from "./data/media.js";
 import {
   normalizeDiscSelections,
@@ -26,19 +27,21 @@ export const COMPARISON_MODES = Object.freeze({
   anomaly: "이상 피해",
 });
 
-export const COMPARISON_STATE_VERSION = 3;
+export const COMPARISON_STATE_VERSION = 4;
 
 const DEFAULT_PROFILE = Object.freeze({
   characterId: "1041",
   mindscape: 0,
   weaponId: "13004",
+  weaponRefinement: 1,
+  weaponEffectMode: "max",
   customEngineBaseAttack: 594,
   discBuildMode: "auto",
   discScore: 30,
   discFourPieceId: "32200",
   discTwoPieceId: "31000",
   discEffectMode: "off",
-  mindscapeEffectMode: "off",
+  mindscapeEffectMode: "max",
   discAttackPercent: 76,
   flatAttackRolls: 2,
   discHpPercent: 0,
@@ -63,6 +66,7 @@ const DEFAULT_PROFILE = Object.freeze({
   passiveAnomalyProficiency: 0,
   passiveAnomalyMasteryPercent: 0,
   penetrationDamageBonusPercent: 0,
+  passiveFlatPenetration: 0,
   advancedOpen: false,
 });
 
@@ -99,11 +103,13 @@ export function createDefaultComparisonState() {
         ...clone(DEFAULT_PROFILE),
         label: "명함 + 전용 엔진",
         weaponId: "14104",
+        weaponRefinement: 1,
       },
       B: {
         ...clone(DEFAULT_PROFILE),
         label: "명함 + 대체 엔진",
         weaponId: "13004",
+        weaponRefinement: 5,
       },
     },
   };
@@ -116,6 +122,10 @@ function number(value, fallback = 0) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function refinement(value) {
+  return clamp(Math.trunc(number(value, 1)), 1, 5);
 }
 
 function secondaryValue(weapon, stat) {
@@ -228,7 +238,45 @@ function mindscapeSkillTypes(characterId, selectedSkillType) {
   ];
 }
 
+function weaponSkillTypes(selectedSkillType) {
+  const typesBySelection = {
+    normal: ["normal", "basic"],
+    dash: ["dash"],
+    counter: ["counter", "dodge-counter"],
+    ex: ["ex", "special", "ex-special"],
+    chain: ["chain"],
+    ultimate: ["ultimate"],
+    assist: ["assist", "quick-assist"],
+    aftershock: ["aftershock"],
+  };
+  if (selectedSkillType === "all") {
+    return [...new Set(Object.values(typesBySelection).flat())];
+  }
+  return typesBySelection[selectedSkillType] ?? [selectedSkillType];
+}
+
 function withAutomatedBuilds(profile, common, resolved) {
+  const weaponPassive = resolveWeaponPassiveEffects(
+    resolved.weapon.id,
+    profile.weaponRefinement,
+    {
+      mode: common.mode,
+      element:
+        ELEMENT_LABELS[characterElement(resolved.character.id)] ?? null,
+      anomalyKey: common.anomalyKey,
+      skillType: weaponSkillTypes(common.skillType),
+      characterId: resolved.character.id,
+      maxActivation: profile.weaponEffectMode === "max",
+    },
+  );
+  const engine = weaponPassive.totals;
+  const engineAnomalyMasteryPercent =
+    engine.anomalyMastery +
+    (resolved.character.anomalyMastery > 0
+      ? (engine.anomalyMasteryFlat /
+          resolved.character.anomalyMastery) *
+        100
+      : 0);
   const mindscape = resolveMindscapeEffects(
     resolved.character.id,
     profile.mindscape,
@@ -248,9 +296,11 @@ function withAutomatedBuilds(profile, common, resolved) {
   const discBuild = resolveDiscBuild({
     profile,
     character: resolved.character,
-    weaponCritRatePercent: resolved.engineCritRatePercent,
+    weaponCritRatePercent:
+      resolved.engineCritRatePercent + engine.critRate,
     weaponAnomalyMasteryPercent:
-      resolved.engineAnomalyMasteryPercent,
+      resolved.engineAnomalyMasteryPercent +
+      engineAnomalyMasteryPercent,
     mindscapeCritRatePercent: cinema.critRate,
     mindscapeAnomalyMasteryPercent: cinema.anomalyMastery,
     mode: common.mode,
@@ -260,6 +310,7 @@ function withAutomatedBuilds(profile, common, resolved) {
   const presetMode = discBuild.type !== "manual";
 
   return {
+    weaponPassive,
     mindscape,
     discBuild,
     effectiveProfile: {
@@ -283,50 +334,67 @@ function withAutomatedBuilds(profile, common, resolved) {
       anomalyDamageBonusPercent:
         number(profile.anomalyDamageBonusPercent, 0) +
         set.anomalyDamageBonusPercent +
-        cinema.anomalyDamageBonus,
+        cinema.anomalyDamageBonus +
+        engine.anomalyDamageBonus,
       passiveAttackPercent:
         number(profile.passiveAttackPercent, 0) +
         set.passiveAttackPercent +
-        cinema.attackPercent,
+        cinema.attackPercent +
+        engine.attackPercent,
       passiveHpPercent:
-        number(profile.passiveHpPercent, 0) + cinema.hpPercent,
+        number(profile.passiveHpPercent, 0) +
+        cinema.hpPercent +
+        engine.hpPercent,
       passiveCritRatePercent:
         number(profile.passiveCritRatePercent, 0) +
         set.passiveCritRatePercent +
-        cinema.critRate,
+        cinema.critRate +
+        engine.critRate,
       passiveCritDamagePercent:
         number(profile.passiveCritDamagePercent, 0) +
         set.passiveCritDamagePercent +
-        cinema.critDamage,
+        cinema.critDamage +
+        engine.critDamage,
       passiveDamageBonusPercent:
         number(profile.passiveDamageBonusPercent, 0) +
         set.passiveDamageBonusPercent +
-        cinema.damageBonus,
+        cinema.damageBonus +
+        engine.damageBonus,
       passivePenetrationPercent:
         number(profile.passivePenetrationPercent, 0) +
         set.passivePenetrationPercent +
-        cinema.penetrationPercent,
+        cinema.penetrationPercent +
+        engine.penetrationPercent,
       passiveDefenseReductionPercent:
         number(profile.passiveDefenseReductionPercent, 0) +
-        cinema.defenseReduction,
+        cinema.defenseReduction +
+        engine.defenseReduction,
       passiveResistanceIgnorePercent:
         number(profile.passiveResistanceIgnorePercent, 0) +
-        cinema.resistanceIgnore,
+        cinema.resistanceIgnore +
+        engine.resistanceIgnore,
       passiveResistanceReductionPercent:
         number(profile.passiveResistanceReductionPercent, 0) +
-        cinema.resistanceReduction,
+        cinema.resistanceReduction +
+        engine.resistanceReduction,
       passiveAnomalyProficiency:
         number(profile.passiveAnomalyProficiency, 0) +
         set.passiveAnomalyProficiency +
-        cinema.anomalyProficiency,
+        cinema.anomalyProficiency +
+        engine.anomalyProficiency,
       passiveAnomalyMasteryPercent:
         number(profile.passiveAnomalyMasteryPercent, 0) +
         set.passiveAnomalyMasteryPercent +
-        cinema.anomalyMastery,
+        cinema.anomalyMastery +
+        engineAnomalyMasteryPercent,
       penetrationDamageBonusPercent:
         number(profile.penetrationDamageBonusPercent, 0) +
         set.penetrationDamageBonusPercent +
-        cinema.penetrationDamageBonus,
+        cinema.penetrationDamageBonus +
+        engine.penetrationDamageBonus,
+      passiveFlatPenetration:
+        number(profile.passiveFlatPenetration, 0) +
+        engine.flatPenetration,
     },
   };
 }
@@ -413,7 +481,9 @@ function calculateMingpoProfile(profile, common, resolved) {
     flatHpRolls: number(profile.flatHpRolls, 0),
     hpPercentBuff:
       shared.hpPercentBuff + number(profile.passiveHpPercent, 0),
-    flatPenetrationBuff: shared.flatPenetrationBuff,
+    flatPenetrationBuff:
+      shared.flatPenetrationBuff +
+      number(profile.passiveFlatPenetration, 0),
     penetrationDamageBonusPercent: number(
       profile.penetrationDamageBonusPercent,
       0,
@@ -564,18 +634,25 @@ function calculateAnomalyProfile(profile, common, resolved) {
 
 export function calculateInvestmentProfile(profile, common) {
   const mode = COMPARISON_MODES[common.mode] ? common.mode : "strong";
-  const normalizedProfile = { ...profile };
+  const normalizedProfile = {
+    ...profile,
+    weaponRefinement: refinement(profile.weaponRefinement),
+    weaponEffectMode: profile.weaponEffectMode === "off" ? "off" : "max",
+    mindscapeEffectMode:
+      profile.mindscapeEffectMode === "off" ? "off" : "max",
+  };
   const resolved = resolveProfile(normalizedProfile);
   normalizeDiscSelections(
     normalizedProfile,
     resolved.character,
     mode,
   );
-  const { discBuild, mindscape, effectiveProfile } = withAutomatedBuilds(
-    normalizedProfile,
-    common,
-    resolved,
-  );
+  const {
+    discBuild,
+    mindscape,
+    weaponPassive,
+    effectiveProfile,
+  } = withAutomatedBuilds(normalizedProfile, common, resolved);
   let calculation;
 
   if (mode === "mingpo") {
@@ -606,6 +683,7 @@ export function calculateInvestmentProfile(profile, common) {
     effectiveProfile,
     discBuild,
     mindscape,
+    weaponPassive,
     ...resolved,
     calculation,
     rawDamage,
@@ -660,14 +738,21 @@ export function compareInvestments(state) {
 
 export function mergeComparisonState(saved) {
   const defaults = createDefaultComparisonState();
-  const legacyState =
-    saved &&
-    number(saved.version, 0) < COMPARISON_STATE_VERSION;
+  const savedVersion = number(saved?.version, 0);
+  const preDiscPresetState = saved && savedVersion < 3;
+  const preAutomaticPassiveState = saved && savedVersion < 4;
   const mergeProfile = (id) => ({
     ...defaults.profiles[id],
     ...(saved?.profiles?.[id] ?? {}),
-    ...(legacyState && saved?.profiles?.[id]
+    ...(preDiscPresetState && saved?.profiles?.[id]
       ? { discBuildMode: "manual" }
+      : {}),
+    ...(preAutomaticPassiveState && saved?.profiles?.[id]
+      ? {
+          mindscapeEffectMode: "max",
+          weaponEffectMode: "max",
+          weaponRefinement: id === "B" ? 5 : 1,
+        }
       : {}),
   });
   return {

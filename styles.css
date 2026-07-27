@@ -1208,8 +1208,52 @@ h1 {
   -webkit-line-clamp: 3;
 }
 
+.selected-build-item__status {
+  display: inline-flex;
+  margin-top: 7px;
+  padding: 3px 6px;
+  border: 1px solid
+    color-mix(in srgb, var(--plan-accent) 35%, var(--line));
+  border-radius: 999px;
+  color: var(--plan-accent);
+  font-size: 8px;
+  font-weight: 900;
+}
+
 .selected-build-item--manual {
   grid-template-columns: 1fr;
+}
+
+.engine-tuning {
+  margin-top: 8px;
+  padding: 0 12px 12px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 11px 11px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.weapon-passive-preview {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-left: 2px solid var(--plan-accent);
+  background: color-mix(in srgb, var(--plan-accent) 5%, transparent);
+}
+
+.weapon-passive-preview strong,
+.weapon-passive-preview small {
+  display: block;
+}
+
+.weapon-passive-preview strong {
+  font-size: 10px;
+}
+
+.weapon-passive-preview small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
 }
 
 .disc-workbench {

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   compareInvestments,
   createDefaultComparisonState,
+  mergeComparisonState,
 } from "../src/comparison-engine.js";
 import {
   CHARACTERS,
@@ -52,6 +53,8 @@ test("W-Engine base and secondary stats affect the comparison", () => {
   const state = createDefaultComparisonState();
   state.profiles.A.weaponId = "14104";
   state.profiles.B.weaponId = "13004";
+  state.profiles.A.weaponEffectMode = "off";
+  state.profiles.B.weaponEffectMode = "off";
   const result = compareInvestments(state);
 
   assert.ok(result.A.rawDamage > result.B.rawDamage);
@@ -62,20 +65,57 @@ test("W-Engine base and secondary stats affect the comparison", () => {
 test("the default comparison has a stable verified result", () => {
   const result = compareInvestments(createDefaultComparisonState());
 
-  assert.equal(result.A.displayedDamage, 33429);
-  assert.equal(result.B.displayedDamage, 30893);
-  assert.ok(Math.abs(result.deltaPercent - -7.585293143424984) < 1e-12);
+  assert.equal(result.A.displayedDamage, 43358);
+  assert.equal(result.B.displayedDamage, 37323);
+  assert.ok(Math.abs(result.deltaPercent - -13.919343006195021) < 1e-12);
 });
 
-test("conditional bonuses can model a Mindscape or W-Engine passive", () => {
+test("W-Engine refinement changes its resolved passive and damage", () => {
   const state = createDefaultComparisonState();
-  state.profiles.B = { ...state.profiles.A };
-  state.profiles.B.mindscape = 1;
-  state.profiles.B.passiveDamageBonusPercent = 30;
+  state.profiles.B = {
+    ...state.profiles.A,
+    weaponRefinement: 5,
+  };
   const result = compareInvestments(state);
 
+  assert.equal(result.A.weaponPassive.totals.attackPercent, 28);
+  assert.equal(result.B.weaponPassive.totals.attackPercent, 56);
+  assert.equal(result.A.townAttack, result.B.townAttack);
+  assert.ok(result.B.combatAttack > result.A.combatAttack);
   assert.equal(result.winner, "B");
   assert.ok(result.deltaPercent > 0);
+});
+
+test("W-Engine conditional effects can be disabled explicitly", () => {
+  const state = createDefaultComparisonState();
+  state.profiles.B = {
+    ...state.profiles.A,
+    weaponEffectMode: "off",
+  };
+  const result = compareInvestments(state);
+
+  assert.equal(result.A.weaponPassive.totals.attackPercent, 28);
+  assert.equal(result.B.weaponPassive.totals.attackPercent, 0);
+  assert.equal(result.B.weaponPassive.applied.length, 0);
+  assert.equal(result.winner, "A");
+});
+
+test("selected Mindscape effects use maximum activation by default", () => {
+  const state = createDefaultComparisonState();
+  state.profiles.B = {
+    ...state.profiles.A,
+    mindscape: 2,
+  };
+  const result = compareInvestments(state);
+
+  assert.equal(result.B.profile.mindscapeEffectMode, "max");
+  assert.equal(result.B.mindscape.totals.damageBonus, 36);
+  assert.equal(
+    result.B.effectiveProfile.passiveDamageBonusPercent -
+      result.A.effectiveProfile.passiveDamageBonusPercent,
+    36,
+  );
+  assert.equal(result.winner, "B");
 });
 
 test("conditional Mindscape values stay off unless max activation is selected", () => {
@@ -163,6 +203,30 @@ test("comparison supports Mingpo and anomaly formulas", () => {
   assert.equal(compareInvestments(anomalyState).winner, "tie");
 });
 
+test("Mingpo W-Engine flat Penetration reaches the damage formula", () => {
+  const state = createDefaultComparisonState();
+  state.common.characterId = "1371";
+  state.common.mode = "mingpo";
+  state.common.skillType = "ultimate";
+  state.profiles.A = {
+    ...state.profiles.A,
+    weaponId: "13014",
+    weaponRefinement: 1,
+    weaponEffectMode: "max",
+  };
+  state.profiles.B = {
+    ...state.profiles.A,
+    weaponEffectMode: "off",
+  };
+
+  const result = compareInvestments(state);
+
+  assert.equal(result.A.weaponPassive.totals.flatPenetration, 240);
+  assert.equal(result.B.weaponPassive.totals.flatPenetration, 0);
+  assert.equal(result.A.combatPenetration - result.B.combatPenetration, 240);
+  assert.ok(result.A.rawDamage > result.B.rawDamage);
+});
+
 test("percentage differences use raw damage before display rounding", () => {
   const state = createDefaultComparisonState();
   const result = compareInvestments(state);
@@ -221,7 +285,7 @@ test("all anomaly score presets keep AP and ATK rolls balanced", () => {
   }
 });
 
-test("attack disc presets fill crit rate before splitting CD and ATK", () => {
+test("attack disc presets stop before a crit roll would exceed 100%", () => {
   const character = CHARACTERS.find((item) => item.id === "1041");
   const build = resolveDiscBuild({
     profile: {
@@ -237,39 +301,55 @@ test("attack disc presets fill crit rate before splitting CD and ATK", () => {
     mode: "strong",
   });
 
-  assert.equal(build.rolls.critRatePercent, 14);
-  assert.equal(build.rolls.critDamagePercent, 8);
+  assert.equal(build.rolls.critRatePercent, 13);
+  assert.equal(build.rolls.critDamagePercent, 9);
   assert.equal(build.rolls.attackPercent, 8);
   assert.equal(build.discAttackPercent, 54);
-  assert.equal(build.discCritRatePercent, 57.6);
-  assert.equal(build.discCritDamagePercent, 38.4);
+  assert.equal(build.discCritRatePercent, 55.2);
+  assert.ok(Math.abs(build.discCritDamagePercent - 43.2) < 1e-9);
   assert.equal(build.critCapReached, true);
+  assert.equal(build.critUpperBoundReached, true);
+  assert.equal(build.critExactCapReached, false);
+  assert.ok(Math.abs(build.totalCritRate - 98.6) < 1e-9);
+  assert.equal(build.critOverflowPercent, 0);
 });
 
-test("attack presets support 35/40 points and cap crit rolls at 30", () => {
-  const character = CHARACTERS.find((item) => item.id === "1171");
-  for (const score of [35, 40]) {
+test("30/35/40-point attack presets preserve the safe crit ceiling", () => {
+  const character = CHARACTERS.find((item) => item.id === "1041");
+  const expected = {
+    30: [13, 9, 8],
+    35: [13, 11, 11],
+    40: [13, 14, 13],
+  };
+  for (const [score, [critRate, critDamage, attack]] of Object.entries(
+    expected,
+  )) {
     const build = resolveDiscBuild({
       profile: {
         discBuildMode: "attack",
-        discScore: score,
+        discScore: Number(score),
         discFourPieceId: "31500",
         discTwoPieceId: "31600",
         discEffectMode: "off",
         passiveCritRatePercent: 0,
       },
       character,
+      weaponCritRatePercent: 24,
       mode: "strong",
     });
-    assert.ok(build.rolls.critRatePercent <= 30);
-    assert.ok(
-      Math.abs(
-        build.rolls.critDamagePercent - build.rolls.attackPercent,
-      ) <= 1,
+    assert.deepEqual(
+      [
+        build.rolls.critRatePercent,
+        build.rolls.critDamagePercent,
+        build.rolls.attackPercent,
+      ],
+      [critRate, critDamage, attack],
     );
+    assert.ok(build.totalCritRate <= 100);
+    assert.ok(build.totalCritRate + 2.4 > 100);
     assert.equal(
       Object.values(build.rolls).reduce((sum, value) => sum + value, 0),
-      score,
+      Number(score),
     );
   }
 });
@@ -293,6 +373,71 @@ test("an already capped attack build assigns every substat roll to CD and ATK", 
   assert.equal(build.rolls.critRatePercent, 0);
   assert.equal(build.rolls.critDamagePercent, 20);
   assert.equal(build.rolls.attackPercent, 20);
+  assert.equal(build.critOverflowPercent, 0);
+  assert.ok(build.fixedCritOverflowPercent > 0);
+});
+
+test("W-Engine passive crit is included before safe disc allocation", () => {
+  const state = createDefaultComparisonState();
+  state.common.characterId = "1191";
+  state.profiles.A = {
+    ...state.profiles.A,
+    weaponId: "14119",
+    weaponRefinement: 1,
+    weaponEffectMode: "max",
+    discFourPieceId: "31500",
+    discTwoPieceId: "31600",
+  };
+  state.profiles.B = { ...state.profiles.A };
+
+  const result = compareInvestments(state).A;
+
+  assert.equal(result.weaponPassive.totals.critRate, 20);
+  assert.deepEqual(result.discBuild.rolls, {
+    anomalyProficiency: 0,
+    attackPercent: 12,
+    critRatePercent: 5,
+    critDamagePercent: 13,
+  });
+  assert.ok(Math.abs(result.discBuild.totalCritRate - 99.4) < 1e-9);
+  assert.equal(result.discBuild.critOverflowPercent, 0);
+});
+
+test("final preset crit activates a 50% disc-set threshold", () => {
+  const character = CHARACTERS.find((item) => item.id === "1041");
+  const build = resolveDiscBuild({
+    profile: {
+      discBuildMode: "attack",
+      discScore: 30,
+      discFourPieceId: "33200",
+      discTwoPieceId: "31500",
+      discEffectMode: "max",
+      passiveCritRatePercent: 0,
+    },
+    character,
+    mode: "strong",
+    skillType: "ex",
+  });
+
+  assert.ok(build.totalCritRate >= 50);
+  assert.equal(build.setTotals.passiveCritDamagePercent, 30);
+});
+
+test("version 3 state migration enables automatic effects without reverting discs", () => {
+  const saved = createDefaultComparisonState();
+  saved.version = 3;
+  saved.profiles.A.discBuildMode = "attack";
+  saved.profiles.A.mindscapeEffectMode = "off";
+  delete saved.profiles.A.weaponRefinement;
+  delete saved.profiles.A.weaponEffectMode;
+
+  const migrated = mergeComparisonState(saved);
+
+  assert.equal(migrated.version, 4);
+  assert.equal(migrated.profiles.A.discBuildMode, "attack");
+  assert.equal(migrated.profiles.A.mindscapeEffectMode, "max");
+  assert.equal(migrated.profiles.A.weaponEffectMode, "max");
+  assert.equal(migrated.profiles.A.weaponRefinement, 1);
 });
 
 test("a selected 4-piece grants its 2-piece bonus and max mode is explicit", () => {

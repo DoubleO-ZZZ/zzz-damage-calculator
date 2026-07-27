@@ -13,6 +13,8 @@ export const DISC_PRESET_SCORES = Object.freeze({
   attack: Object.freeze([30, 35, 40]),
 });
 
+const CRIT_EPSILON = 1e-9;
+
 const SKILL_TAG_BY_TYPE = Object.freeze({
   normal: "basic",
   dash: "dash",
@@ -298,18 +300,30 @@ function anomalyPreset(score) {
     discAnomalyMasteryPercent: 30,
     damageBonusPercent: 30,
     critCapReached: false,
+    critUpperBoundReached: false,
+    critExactCapReached: false,
     critOverflowPercent: 0,
+    fixedCritOverflowPercent: 0,
+    totalCritRate: 0,
   };
 }
 
 function attackPreset(score, nonSubstatCritRate) {
   const critRollCapacity = 30;
-  const neededCritRolls = Math.max(
+  const safeCritRolls = Math.max(
     0,
-    Math.ceil((100 - nonSubstatCritRate - 1e-9) /
+    Math.floor((100 - nonSubstatCritRate + CRIT_EPSILON) /
       DISC_ROLL_VALUES.critRatePercent),
   );
-  const critRateRolls = Math.min(score, critRollCapacity, neededCritRolls);
+  let critRateRolls = Math.min(score, critRollCapacity, safeCritRolls);
+  while (
+    critRateRolls > 0 &&
+    nonSubstatCritRate +
+      critRateRolls * DISC_ROLL_VALUES.critRatePercent >
+      100 + CRIT_EPSILON
+  ) {
+    critRateRolls -= 1;
+  }
   const remaining = score - critRateRolls;
   const critDamageRolls = Math.ceil(remaining / 2);
   const attackRolls = Math.floor(remaining / 2);
@@ -317,6 +331,12 @@ function attackPreset(score, nonSubstatCritRate) {
     24 + critRateRolls * DISC_ROLL_VALUES.critRatePercent;
   const totalCritRate = nonSubstatCritRate +
     critRateRolls * DISC_ROLL_VALUES.critRatePercent;
+  const critExactCapReached =
+    Math.abs(totalCritRate - 100) <= CRIT_EPSILON;
+  const critUpperBoundReached =
+    critExactCapReached ||
+    totalCritRate + DISC_ROLL_VALUES.critRatePercent >
+      100 + CRIT_EPSILON;
 
   return {
     type: "attack",
@@ -336,8 +356,12 @@ function attackPreset(score, nonSubstatCritRate) {
     discAnomalyProficiency: 0,
     discAnomalyMasteryPercent: 0,
     damageBonusPercent: 30,
-    critCapReached: totalCritRate >= 100 - 1e-9,
-    critOverflowPercent: Math.max(0, totalCritRate - 100),
+    critCapReached: critUpperBoundReached,
+    critUpperBoundReached,
+    critExactCapReached,
+    critOverflowPercent: 0,
+    fixedCritOverflowPercent: Math.max(0, nonSubstatCritRate - 100),
+    totalCritRate,
   };
 }
 
@@ -412,59 +436,75 @@ export function resolveDiscBuild({
   const score = allowedScores.includes(requestedScore)
     ? requestedScore
     : allowedScores[0];
-  const basePreset = type === "anomaly"
-    ? anomalyPreset(score)
-    : {
-        discAnomalyMasteryPercent: 0,
-        discCritRatePercent: 24,
-      };
   const element = characterElement(character.id);
-  const presetAnomalyMasteryPercent =
-    basePreset.discAnomalyMasteryPercent +
+  const baseCritRate =
+    character.critRate +
+    weaponCritRatePercent +
+    mindscapeCritRatePercent +
+    number(profile.passiveCritRatePercent);
+  const baseAnomalyMasteryPercent =
     weaponAnomalyMasteryPercent +
     mindscapeAnomalyMasteryPercent +
     number(profile.passiveAnomalyMasteryPercent);
-  const context = {
-    element,
-    skillType,
-    effectMode: profile.discEffectMode === "max" ? "max" : "off",
-    anomalyMastery:
-      character.anomalyMastery *
-      (1 + presetAnomalyMasteryPercent / 100),
-    critRate:
-      character.critRate +
-      weaponCritRatePercent +
-      basePreset.discCritRatePercent +
-      mindscapeCritRatePercent,
-  };
-  let effects = selectedDiscEffects(profile, context);
+  let effects = [];
   let setTotals = aggregateSetEffects(effects);
-  effects = selectedDiscEffects(profile, {
-    ...context,
-    anomalyMastery:
-      character.anomalyMastery *
-      (1 +
-        (presetAnomalyMasteryPercent +
-          setTotals.discAnomalyMasteryPercent +
-          setTotals.passiveAnomalyMasteryPercent) /
-          100),
-    critRate:
-      context.critRate +
-      setTotals.discCritRatePercent +
-      setTotals.passiveCritRatePercent,
-  });
-  setTotals = aggregateSetEffects(effects);
-  const nonSubstatCritRate =
-    character.critRate +
-    weaponCritRatePercent +
-    24 +
-    mindscapeCritRatePercent +
-    number(profile.passiveCritRatePercent) +
-    setTotals.discCritRatePercent +
-    setTotals.passiveCritRatePercent;
-  const preset = type === "anomaly"
-    ? basePreset
-    : attackPreset(score, nonSubstatCritRate);
+  let nonSubstatCritRate =
+    baseCritRate + (type === "attack" ? 24 : 0);
+  let preset =
+    type === "anomaly"
+      ? anomalyPreset(score)
+      : attackPreset(score, nonSubstatCritRate);
+  let previousSignature = "";
+
+  // Some 4-piece effects depend on the finished crit/anomaly stat. Resolve
+  // those effects and the crit-roll allocation together until both settle.
+  for (let iteration = 0; iteration < 8; iteration += 1) {
+    const context = {
+      element,
+      skillType,
+      effectMode: profile.discEffectMode === "max" ? "max" : "off",
+      anomalyMastery:
+        character.anomalyMastery *
+        (1 +
+          (baseAnomalyMasteryPercent +
+            preset.discAnomalyMasteryPercent +
+            setTotals.discAnomalyMasteryPercent +
+            setTotals.passiveAnomalyMasteryPercent) /
+            100),
+      critRate:
+        baseCritRate +
+        preset.discCritRatePercent +
+        setTotals.discCritRatePercent +
+        setTotals.passiveCritRatePercent,
+    };
+    const nextEffects = selectedDiscEffects(profile, context);
+    const nextSetTotals = aggregateSetEffects(nextEffects);
+    const nextNonSubstatCritRate =
+      baseCritRate +
+      (type === "attack" ? 24 : 0) +
+      nextSetTotals.discCritRatePercent +
+      nextSetTotals.passiveCritRatePercent;
+    const nextPreset =
+      type === "anomaly"
+        ? preset
+        : attackPreset(score, nextNonSubstatCritRate);
+    const signature = JSON.stringify({
+      active: nextEffects
+        .filter((effect) => effect.active)
+        .map((effect) => effect.key),
+      critRateRolls: nextPreset.rolls?.critRatePercent ?? 0,
+      setCritRate:
+        nextSetTotals.discCritRatePercent +
+        nextSetTotals.passiveCritRatePercent,
+    });
+
+    effects = nextEffects;
+    setTotals = nextSetTotals;
+    nonSubstatCritRate = nextNonSubstatCritRate;
+    preset = nextPreset;
+    if (signature === previousSignature) break;
+    previousSignature = signature;
+  }
 
   return {
     ...preset,

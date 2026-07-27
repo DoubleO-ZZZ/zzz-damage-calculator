@@ -160,6 +160,14 @@ function normalizeSelections() {
   comparisonState.common.characterId = character.id;
   for (const profile of Object.values(comparisonState.profiles)) {
     profile.characterId = character.id;
+    const refinement = Math.trunc(Number(profile.weaponRefinement));
+    profile.weaponRefinement = Number.isFinite(refinement)
+      ? Math.min(5, Math.max(1, refinement))
+      : 1;
+    profile.weaponEffectMode =
+      profile.weaponEffectMode === "off" ? "off" : "max";
+    profile.mindscapeEffectMode =
+      profile.mindscapeEffectMode === "off" ? "off" : "max";
     alignProfileWeapon(profile, character);
     normalizeDiscSelections(
       profile,
@@ -553,10 +561,11 @@ function renderCommon(character) {
   `;
 }
 
-function renderWeaponPicker(id, character, profile) {
+function renderWeaponPicker(id, character, profile, profileResult) {
   const scope = `profile-${id}`;
   const weapon =
     profile.weaponId === "custom" ? null : WEAPON_BY_ID[profile.weaponId];
+  const weaponPassive = profileResult?.weaponPassive;
   const options = liveWeapons(character);
   return `
     <div class="build-selector">
@@ -577,11 +586,54 @@ function renderWeaponPicker(id, character, profile) {
                 ${decimalFormatter.format(weapon.secondaryValue)}${
                   weapon.secondaryUnit === "percent" ? "%" : ""
                 }</small>
+                <span class="selected-build-item__status">
+                  R${profile.weaponRefinement} · ${
+                    profile.weaponEffectMode === "max"
+                      ? "조건 최대 적용"
+                      : "상시 효과만 적용"
+                  }
+                </span>
               </div>
             </div>`
           : `<div class="selected-build-item selected-build-item--manual">
               <div><strong>직접 입력 엔진</strong><small>고급 설정의 기초 공격력 사용</small></div>
             </div>`
+      }
+      ${
+        weapon
+          ? `<div class="engine-tuning">
+              ${segmentedChoices({
+                scope,
+                key: "weaponRefinement",
+                value: profile.weaponRefinement,
+                type: "number",
+                options: Array.from({ length: 5 }, (_, index) => ({
+                  value: index + 1,
+                  label: `R${index + 1}`,
+                })),
+                label: "재련 단계",
+              })}
+              ${segmentedChoices({
+                scope,
+                key: "weaponEffectMode",
+                value: profile.weaponEffectMode,
+                options: [
+                  { value: "off", label: "조건 미발동" },
+                  { value: "max", label: "조건 최대" },
+                ],
+                label: "엔진 조건부 효과",
+              })}
+              <div class="weapon-passive-preview">
+                <strong>${escapeHtml(
+                  weaponPassive?.title ?? "엔진 패시브",
+                )}</strong>
+                <small>${escapeHtml(
+                  weaponPassive?.description ??
+                    "선택한 재련 단계의 수치 효과를 계산합니다.",
+                )}</small>
+              </div>
+            </div>`
+          : ""
       }
       <details class="visual-picker">
         <summary>엔진 변경 <small>${options.length}개 호환</small></summary>
@@ -759,14 +811,14 @@ function renderDiscPreset(id, profile, profileResult, mode) {
         ${escapeHtml(rollSummary)}
         ${
           build.type === "attack"
-            ? build.critCapReached
-              ? ` · 만치확 도달${
-                  build.critOverflowPercent > 0
-                    ? ` (초과 ${decimalFormatter.format(
-                        build.critOverflowPercent,
-                      )}%)`
-                    : ""
-                }`
+            ? build.fixedCritOverflowPercent > 0
+              ? ` · 고정 효과만으로 치확 ${decimalFormatter.format(
+                  build.totalCritRate,
+                )}%`
+              : build.critUpperBoundReached
+                ? ` · 치확 상한 배분 ${decimalFormatter.format(
+                    build.totalCritRate,
+                  )}% (초과 방지)`
               : " · 부옵 한도 내 만치확 미달"
             : " · 이상마/공퍼 1:1"
         }
@@ -785,9 +837,18 @@ function renderEffectSummary(profileResult) {
   const mindscape = profileResult.mindscape;
   const appliedMindscape = mindscape?.applied ?? [];
   const unsupportedMindscape = mindscape?.unsupported ?? [];
+  const weaponPassive = profileResult.weaponPassive;
+  const appliedWeapon = weaponPassive?.applied ?? [];
+  const unsupportedWeapon = weaponPassive?.unsupported ?? [];
   const scopedOutMindscape = (mindscape?.skipped ?? []).filter((effect) =>
     effect.skippedReason?.startsWith("scope:"),
   );
+  const scopedOutWeapon = (weaponPassive?.skipped ?? []).filter((effect) =>
+    effect.skippedReason?.startsWith("scope:"),
+  );
+  const weaponEffectLabel = (effect) =>
+    effect?.label ?? effect?.title ?? effect?.stat ?? weaponPassive?.title ??
+    "엔진 효과";
   const scopeReason = (reason) => {
     const key = reason?.replace("scope:", "");
     return {
@@ -795,6 +856,7 @@ function renderEffectSummary(profileResult) {
       element: "캐릭터 속성",
       anomalyKey: "이상 종류",
       skillType: "대표 공격",
+      characterId: "장착 캐릭터",
     }[key] ?? "선택 조건";
   };
   return `
@@ -802,7 +864,10 @@ function renderEffectSummary(profileResult) {
       <div>
         <strong>자동 반영 중</strong>
         ${
-          activeDiscEffects.length + appliedMindscape.length === 0
+          activeDiscEffects.length +
+              appliedMindscape.length +
+              appliedWeapon.length ===
+            0
             ? "<small>상시 효과 없음 · 조건부는 미발동</small>"
             : `<ul>
                 ${activeDiscEffects
@@ -819,14 +884,32 @@ function renderEffectSummary(profileResult) {
                       `<li>M${effect.level} · ${escapeHtml(effect.label)}</li>`,
                   )
                   .join("")}
+                ${appliedWeapon
+                  .map(
+                    (effect) =>
+                      `<li>${escapeHtml(
+                        profileResult.weapon.name,
+                      )} R${weaponPassive.refinement} · ${escapeHtml(
+                        weaponEffectLabel(effect),
+                      )}${
+                        effect.activeStacks > 1
+                          ? ` ×${effect.activeStacks}`
+                          : ""
+                      }</li>`,
+                  )
+                  .join("")}
               </ul>`
         }
       </div>
       ${
-        unsupportedMindscape.length + unsupportedDiscEffects.length
+        unsupportedMindscape.length +
+          unsupportedDiscEffects.length +
+          unsupportedWeapon.length
           ? `<details>
               <summary>현재 대표식에서 제외 ${
-                unsupportedMindscape.length + unsupportedDiscEffects.length
+                unsupportedMindscape.length +
+                unsupportedDiscEffects.length +
+                unsupportedWeapon.length
               }개</summary>
               <ul>${unsupportedDiscEffects
                 .map(
@@ -842,19 +925,43 @@ function renderEffectSummary(profileResult) {
                       effect.label,
                     )} — ${escapeHtml(effect.reason ?? "별도 피해식 필요")}</li>`,
                 )
+                .join("")}${unsupportedWeapon
+                .map(
+                  (effect) =>
+                    `<li>${escapeHtml(
+                      profileResult.weapon.name,
+                    )} · ${escapeHtml(
+                      weaponEffectLabel(effect),
+                    )} — ${escapeHtml(
+                      effect.reason ?? "별도 피해식 필요",
+                    )}</li>`,
+                )
                 .join("")}</ul>
             </details>`
           : ""
       }
       ${
-        scopedOutMindscape.length
+        scopedOutMindscape.length + scopedOutWeapon.length
           ? `<details>
-              <summary>선택 조건에서 미적용 ${scopedOutMindscape.length}개</summary>
+              <summary>선택 조건에서 미적용 ${
+                scopedOutMindscape.length + scopedOutWeapon.length
+              }개</summary>
               <ul>${scopedOutMindscape
                 .map(
                   (effect) =>
                     `<li>M${effect.level} · ${escapeHtml(
                       effect.label,
+                    )} — ${escapeHtml(
+                      scopeReason(effect.skippedReason),
+                    )} 불일치</li>`,
+                )
+                .join("")}${scopedOutWeapon
+                .map(
+                  (effect) =>
+                    `<li>${escapeHtml(
+                      profileResult.weapon.name,
+                    )} · ${escapeHtml(
+                      weaponEffectLabel(effect),
                     )} — ${escapeHtml(
                       scopeReason(effect.skippedReason),
                     )} 불일치</li>`,
@@ -1025,6 +1132,13 @@ function renderManualFields(id, profile, mode, manualDisc) {
         key: "penetrationDamageBonusPercent",
         unit: "%",
       }),
+      numberField({
+        label: "추가 고정 관입력",
+        value: profile.passiveFlatPenetration,
+        scope,
+        key: "passiveFlatPenetration",
+        unit: "pt",
+      }),
     );
   }
   return fields.join("");
@@ -1073,7 +1187,7 @@ function renderProfile(id, character, profileResult) {
             label: "조건부 효과",
           })}
         </section>
-        ${renderWeaponPicker(id, character, profile)}
+        ${renderWeaponPicker(id, character, profile, profileResult)}
         ${renderDiscPreset(
           id,
           profile,
@@ -1102,8 +1216,8 @@ function renderProfile(id, character, profileResult) {
         >
           <summary>수동 수치·대표 계수 조정</summary>
           <p>
-            프리셋 외 수치와 엔진 패시브를 직접 보정할 때만 사용합니다.
-            시네마 자동 수치와 별도 층으로 합산됩니다.
+            프리셋에 없는 파티 효과나 자동 환산 제외 효과를 직접 보정할 때만
+            사용합니다. 엔진·시네마 자동 수치와 별도 층으로 합산됩니다.
           </p>
           <div class="compare-field-grid">
             ${
@@ -1131,6 +1245,15 @@ function renderProfile(id, character, profileResult) {
           )}" target="_blank" rel="noreferrer">${escapeHtml(
             character.name,
           )} 원본 수치 ↗</a>
+          ${
+            profileResult.weapon.id === "custom"
+              ? ""
+              : `<a class="catalog-source" href="${escapeHtml(
+                  profileResult.weapon.sourceUrl,
+                )}" target="_blank" rel="noreferrer">${escapeHtml(
+                  profileResult.weapon.name,
+                )} 원문 ↗</a>`
+          }
           <a class="catalog-source" href="${escapeHtml(
             DISC_SET_BY_ID[profile.discFourPieceId]?.sourceUrl ?? "#",
           )}" target="_blank" rel="noreferrer">디스크 원문 ↗</a>
@@ -1181,7 +1304,11 @@ function renderResult(providedResult) {
     <article class="comparison-result__plan comparison-result__plan--${id.toLowerCase()}">
       <span>PLAN ${id} · 투자안 ${id}</span>
       <p class="comparison-build-summary">
-        M${data.profile.mindscape} · ${escapeHtml(data.weapon.name)} ·
+        M${data.profile.mindscape} · ${escapeHtml(data.weapon.name)}${
+          data.weapon.id === "custom"
+            ? ""
+            : ` R${data.profile.weaponRefinement}`
+        } ·
         ${data.discBuild.type === "manual" ? "수동 디스크" : `${data.discBuild.score}점 ${data.discBuild.type === "anomaly" ? "이상형" : "치명형"}`}
       </p>
       <strong>${formatter.format(data.displayedDamage)}</strong>
@@ -1234,9 +1361,10 @@ function renderResult(providedResult) {
     <div class="comparison-assumptions">
       <strong>자동 반영 범위</strong>
       <p>
-        라이브 3.0의 60레벨 기초 수치, 엔진 기초·고급 속성, 디스크 주옵·유효
-        부옵 프리셋, 2·4세트 효과와 적용 가능한 시네마 수치를 합산했습니다.
-        조건부 효과는 각 투자안의 ‘조건 최대’ 선택 때만 최대치로 계산합니다.
+        라이브 3.0의 60레벨 기초 수치, 엔진 기초·고급 속성과 재련별 패시브,
+        디스크 주옵·유효 부옵 프리셋, 2·4세트 효과와 적용 가능한 시네마
+        수치를 합산했습니다. 조건부 효과는 각 투자안의 ‘조건 최대’ 선택 때
+        최대치로 계산합니다.
       </p>
     </div>
   `;
@@ -1314,6 +1442,7 @@ function applyCharacterChoice(characterId) {
   for (const [id, profile] of Object.entries(comparisonState.profiles)) {
     profile.characterId = character.id;
     profile.weaponId = planWeapons[id];
+    profile.weaponRefinement = id === "B" ? 5 : 1;
     const recommended = recommendedDiscSets(
       character,
       comparisonState.common.mode,
@@ -1345,6 +1474,10 @@ function handleChoice(event) {
   }
   if (key === "mode") {
     applyModeChoice(value);
+  }
+  if (key === "weaponId" && value !== "custom") {
+    target.weaponRefinement =
+      WEAPON_BY_ID[value]?.rank === "S급" ? 1 : 5;
   }
   if (key === "discBuildMode" && value !== "manual") {
     const effectiveType =
