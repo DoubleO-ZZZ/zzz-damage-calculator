@@ -1,0 +1,14 @@
+{
+  "name": "zzz-damage-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zenless Zone Zero damage calculator based on the source spreadsheet formulas.",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/calculators.js && node --check src/app.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

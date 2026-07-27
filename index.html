@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="젠레스 존 제로 강공·명파·이상 데미지를 원본 스프레드시트 수식으로 계산하는 비공식 팬 도구"
+    />
+    <meta name="theme-color" content="#0b0d10" />
+    <title>뉴에리두 전투 계산기</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#calculator-content">계산기로 바로가기</a>
+
+    <div class="noise" aria-hidden="true"></div>
+    <header class="site-header">
+      <div class="header-grid">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">
+            <span>ZZ</span>
+            <span>Z</span>
+          </div>
+          <div>
+            <p class="eyebrow">INTER-KNOT // COMBAT LAB</p>
+            <h1>뉴에리두 전투 계산기</h1>
+            <p class="header-copy">
+              복잡한 전투식을 한 화면에서. 값을 바꾸면 결과가 즉시 갱신됩니다.
+            </p>
+          </div>
+        </div>
+
+        <div class="header-meta">
+          <div class="signal" aria-label="계산기 상태: 온라인">
+            <span class="signal-dot"></span>
+            <span>LIVE FORMULA</span>
+          </div>
+          <a
+            class="source-link"
+            href="https://docs.google.com/spreadsheets/d/1MBIJUZt4_295LxIxvePQEFrTjmFsOu0tKPb3oPK67Tg/htmlview"
+            target="_blank"
+            rel="noreferrer"
+          >
+            원본 시트
+            <span aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <nav class="calculator-nav" aria-label="계산기 선택">
+      <div class="nav-inner" role="tablist" aria-label="데미지 계산기">
+        <button
+          class="nav-tab is-active"
+          id="tab-strong"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="panel-strong"
+          data-calculator-tab="strong"
+        >
+          <span class="tab-index">01</span>
+          <span>
+            <strong>강공</strong>
+            <small>일반 공격 기반</small>
+          </span>
+        </button>
+        <button
+          class="nav-tab"
+          id="tab-mingpo"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-mingpo"
+          data-calculator-tab="mingpo"
+          tabindex="-1"
+        >
+          <span class="tab-index">02</span>
+          <span>
+            <strong>명파</strong>
+            <small>관입력 기반</small>
+          </span>
+        </button>
+        <button
+          class="nav-tab"
+          id="tab-anomaly"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-anomaly"
+          data-calculator-tab="anomaly"
+          tabindex="-1"
+        >
+          <span class="tab-index">03</span>
+          <span>
+            <strong>이상</strong>
+            <small>이상·혼돈·난개</small>
+          </span>
+        </button>
+      </div>
+    </nav>
+
+    <main id="calculator-content">
+      <section
+        class="calculator-panel is-active"
+        id="panel-strong"
+        role="tabpanel"
+        aria-labelledby="tab-strong"
+        data-calculator-panel="strong"
+      >
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">ATTACK DAMAGE</p>
+            <h2>강공 데미지 계산기</h2>
+            <p>공격력, 방어·저항, 치명타와 그로기 배율을 종합합니다.</p>
+          </div>
+          <button class="ghost-button" type="button" data-reset="strong">
+            기본값 복원
+          </button>
+        </div>
+
+        <div class="calculator-shell">
+          <aside class="result-rail result-rail--yellow" aria-live="polite">
+            <p class="result-label">표기 데미지</p>
+            <output class="result-value" id="strong-result">—</output>
+            <p class="result-raw" id="strong-raw">정밀 계산 —</p>
+            <div class="metric-grid" id="strong-metrics"></div>
+          </aside>
+          <form class="form-surface" id="strong-form" novalidate>
+            <div class="form-sections" id="strong-fields"></div>
+          </form>
+        </div>
+      </section>
+
+      <section
+        class="calculator-panel"
+        id="panel-mingpo"
+        role="tabpanel"
+        aria-labelledby="tab-mingpo"
+        data-calculator-panel="mingpo"
+        hidden
+      >
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">SHEER FORCE</p>
+            <h2>명파 데미지 계산기</h2>
+            <p>공격력과 체력에서 도출되는 관입력을 중심으로 계산합니다.</p>
+          </div>
+          <button class="ghost-button" type="button" data-reset="mingpo">
+            기본값 복원
+          </button>
+        </div>
+
+        <div class="calculator-shell">
+          <aside class="result-rail result-rail--cyan" aria-live="polite">
+            <p class="result-label">표기 데미지</p>
+            <output class="result-value" id="mingpo-result">—</output>
+            <p class="result-raw" id="mingpo-raw">정밀 계산 —</p>
+            <div class="metric-grid" id="mingpo-metrics"></div>
+          </aside>
+          <form class="form-surface" id="mingpo-form" novalidate>
+            <div class="form-sections" id="mingpo-fields"></div>
+          </form>
+        </div>
+      </section>
+
+      <section
+        class="calculator-panel calculator-panel--anomaly"
+        id="panel-anomaly"
+        role="tabpanel"
+        aria-labelledby="tab-anomaly"
+        data-calculator-panel="anomaly"
+        hidden
+      >
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">ANOMALY LAB</p>
+            <h2>이상 데미지 계산기</h2>
+            <p>
+              딜러 A·B의 스냅샷과 실시간 스탯, 이상계수와 전용 휘광 계산을
+              한곳에서 비교합니다.
+            </p>
+          </div>
+          <button class="ghost-button" type="button" data-reset="anomaly">
+            전체 기본값 복원
+          </button>
+        </div>
+
+        <div class="anomaly-toolbar" role="group" aria-label="이상 계산기 섹션">
+          <button class="section-chip is-active" type="button" data-anomaly-jump="dealers">
+            딜러 스탯
+          </button>
+          <button class="section-chip" type="button" data-anomaly-jump="damage">
+            이상 데미지
+          </button>
+          <button class="section-chip" type="button" data-anomaly-jump="coefficients">
+            계수 도출
+          </button>
+          <button class="section-chip" type="button" data-anomaly-jump="radiance">
+            레미엘 휘광
+          </button>
+        </div>
+
+        <form id="anomaly-form" novalidate>
+          <section class="anomaly-section" id="anomaly-dealers" data-anomaly-section="dealers">
+            <div class="subsection-heading">
+              <div>
+                <span class="subsection-number">A</span>
+                <div>
+                  <h3>딜러 스탯</h3>
+                  <p>스냅샷과 실시간 적용값을 각각 관리합니다.</p>
+                </div>
+              </div>
+            </div>
+            <div class="dealer-grid" id="anomaly-dealer-fields"></div>
+          </section>
+
+          <section class="anomaly-section" id="anomaly-damage" data-anomaly-section="damage">
+            <div class="subsection-heading">
+              <div>
+                <span class="subsection-number">B</span>
+                <div>
+                  <h3>이상 데미지 비교</h3>
+                  <p>두 딜러의 스냅샷을 서로 다른 실시간 조건과 조합합니다.</p>
+                </div>
+              </div>
+            </div>
+            <div class="comparison-grid" id="anomaly-damage-slots"></div>
+          </section>
+
+          <section
+            class="anomaly-section"
+            id="anomaly-coefficients"
+            data-anomaly-section="coefficients"
+          >
+            <div class="subsection-heading">
+              <div>
+                <span class="subsection-number">C</span>
+                <div>
+                  <h3>이상계수 · 추가배율 도출</h3>
+                  <p>속성이상, 혼돈, 난류와 캐릭터별 난개 배율을 계산합니다.</p>
+                </div>
+              </div>
+            </div>
+            <div class="lab-grid" id="anomaly-coefficient-tools"></div>
+          </section>
+
+          <section
+            class="anomaly-section"
+            id="anomaly-radiance"
+            data-anomaly-section="radiance"
+          >
+            <div class="subsection-heading">
+              <div>
+                <span class="subsection-number">D</span>
+                <div>
+                  <h3>레미엘 휘광 전용 계산</h3>
+                  <p>스킬 배율과 이상마 보정, 전용엔진·돌파 조건까지 반영합니다.</p>
+                </div>
+              </div>
+            </div>
+            <div id="radiance-calculator"></div>
+          </section>
+        </form>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <strong>NEW ERIDU COMBAT LAB</strong>
+        <p>입력값은 이 브라우저에만 저장되며 외부로 전송되지 않습니다.</p>
+      </div>
+      <p class="legal">
+        비공식 팬 제작 도구입니다. Zenless Zone Zero 및 관련 상표의 권리는
+        HoYoverse에 있습니다.
+      </p>
+    </footer>
+
+    <noscript>
+      <div class="noscript">계산기를 사용하려면 JavaScript를 활성화해 주세요.</div>
+    </noscript>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
